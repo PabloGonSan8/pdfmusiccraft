@@ -148,7 +148,12 @@ impl FillMark {
     }
 }
 
-/// The stamps of Acrobat's stamp palette (drawn in PdfCraft's own style).
+/// The font size (points) of a dynamic mark (pp, mf, sfz, Ped.) placed with a click.
+pub(crate) const MUSIC_DYNAMIC_SIZE: f64 = 18.0;
+/// The font size (points) of a tempo or dynamic word (rit., cresc.) placed with a click.
+pub(crate) const MUSIC_WORD_SIZE: f64 = 13.0;
+
+/// The stamps of Acrobat's stamp palette (drawn in PdfCraft's own style), and the music marks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StampKind {
     // Standard business.
@@ -176,6 +181,84 @@ pub enum StampKind {
     DynReceived,
     DynReviewed,
     DynRevised,
+    // Music: the marks a performer pencils into a score.
+    // Dynamics, in bold italic serif letters.
+    Ppp,
+    Pp,
+    Piano,
+    Mp,
+    Mf,
+    Forte,
+    Ff,
+    Fff,
+    Sfz,
+    Fp,
+    // Hairpins, stretched to the passage they cover.
+    Crescendo,
+    Diminuendo,
+    // Tempo and dynamic words, in italic serif letters.
+    Cresc,
+    Dim,
+    Rit,
+    Accel,
+    ATempo,
+    // Articulations, ornaments and signs, drawn as paths.
+    Accent,
+    Staccato,
+    Tenuto,
+    Marcato,
+    Fermata,
+    BreathMark,
+    Caesura,
+    UpBow,
+    DownBow,
+    PedalDown,
+    PedalUp,
+    Glasses,
+    // Slurs and ties, stretched to the notes they join.
+    SlurAbove,
+    SlurBelow,
+    // Fingering, in small upright numbers.
+    Finger1,
+    Finger2,
+    Finger3,
+    Finger4,
+    Finger5,
+    // Rehearsal letters, boxed.
+    RehearsalA,
+    RehearsalB,
+    RehearsalC,
+    RehearsalD,
+    RehearsalE,
+    RehearsalF,
+    RehearsalG,
+    RehearsalH,
+    /// A number of the player's choosing (bar counts, beats, string numbers): its text is the
+    /// stamp's `by` line (`/PCByLine`), set when it is placed.
+    Number,
+    /// Jumps: the segno and coda signs, and the words that send a player to them. A tap on one in
+    /// the touch interface goes to the next of its kind (`JumpFamily`).
+    Segno,
+    Coda,
+    DalSegno,
+    ToCoda,
+    DaCapo,
+    Fine,
+    /// A named jump: "→ A" where the player leaves, and the circled "A" where they land. The
+    /// letter is the stamp's `by` line; a tap on one goes to the other.
+    JumpFrom,
+    JumpTo,
+}
+
+/// Where a jump mark sends the player ([`StampKind::jump_family`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JumpFamily {
+    /// The next segno or D.S. mark.
+    Segno,
+    /// The next coda or To Coda mark.
+    Coda,
+    /// The first page.
+    Start,
 }
 
 /// The palette's sections.
@@ -184,10 +267,23 @@ pub enum StampGroup {
     Dynamic,
     SignHere,
     StandardBusiness,
+    Music,
 }
 
 impl StampKind {
-    pub const ALL: [StampKind; 22] = [
+    /// The music marks, in palette order.
+    pub const MUSIC: [StampKind; 53] = {
+        use StampKind::*;
+        [
+            Ppp, Pp, Piano, Mp, Mf, Forte, Ff, Fff, Sfz, Fp, Crescendo, Diminuendo, Cresc, Dim, Rit, Accel, ATempo, Accent, Staccato, Tenuto,
+            Marcato, Fermata, BreathMark, Caesura, UpBow, DownBow, PedalDown, PedalUp, Glasses, SlurAbove, SlurBelow, Finger1, Finger2, Finger3,
+            Finger4, Finger5, RehearsalA, RehearsalB, RehearsalC, RehearsalD, RehearsalE, RehearsalF, RehearsalG, RehearsalH, Number, Segno, Coda,
+            DalSegno, ToCoda, DaCapo, Fine, JumpFrom, JumpTo,
+        ]
+    };
+
+    /// Every stamp: the business palette, then the music marks ([`Self::MUSIC`]).
+    pub const ALL: [StampKind; 75] = [
         StampKind::DynApproved,
         StampKind::DynConfidential,
         StampKind::DynReceived,
@@ -210,6 +306,59 @@ impl StampKind {
         StampKind::NotForPublicRelease,
         StampKind::PreliminaryResults,
         StampKind::Void,
+        StampKind::Ppp,
+        StampKind::Pp,
+        StampKind::Piano,
+        StampKind::Mp,
+        StampKind::Mf,
+        StampKind::Forte,
+        StampKind::Ff,
+        StampKind::Fff,
+        StampKind::Sfz,
+        StampKind::Fp,
+        StampKind::Crescendo,
+        StampKind::Diminuendo,
+        StampKind::Cresc,
+        StampKind::Dim,
+        StampKind::Rit,
+        StampKind::Accel,
+        StampKind::ATempo,
+        StampKind::Accent,
+        StampKind::Staccato,
+        StampKind::Tenuto,
+        StampKind::Marcato,
+        StampKind::Fermata,
+        StampKind::BreathMark,
+        StampKind::Caesura,
+        StampKind::UpBow,
+        StampKind::DownBow,
+        StampKind::PedalDown,
+        StampKind::PedalUp,
+        StampKind::Glasses,
+        StampKind::SlurAbove,
+        StampKind::SlurBelow,
+        StampKind::Finger1,
+        StampKind::Finger2,
+        StampKind::Finger3,
+        StampKind::Finger4,
+        StampKind::Finger5,
+        StampKind::RehearsalA,
+        StampKind::RehearsalB,
+        StampKind::RehearsalC,
+        StampKind::RehearsalD,
+        StampKind::RehearsalE,
+        StampKind::RehearsalF,
+        StampKind::RehearsalG,
+        StampKind::RehearsalH,
+        StampKind::Number,
+        StampKind::Segno,
+        StampKind::Coda,
+        StampKind::DalSegno,
+        StampKind::ToCoda,
+        StampKind::DaCapo,
+        StampKind::Fine,
+        StampKind::JumpFrom,
+        StampKind::JumpTo,
     ];
 
     pub fn group(self) -> StampGroup {
@@ -217,7 +366,50 @@ impl StampKind {
         match self {
             DynApproved | DynConfidential | DynReceived | DynReviewed | DynRevised => StampGroup::Dynamic,
             Accepted | InitialHere | Rejected | SignHere | Witness => StampGroup::SignHere,
-            _ => StampGroup::StandardBusiness,
+            Approved | Completed | Confidential | Draft | Final | ForComment | ForPublicRelease | InformationOnly | NotApproved
+            | NotForPublicRelease | PreliminaryResults | Void => StampGroup::StandardBusiness,
+            _ => StampGroup::Music,
+        }
+    }
+
+    /// The jump marks a tap follows: the sign it goes to, and the marks that send there.
+    /// `None` for every other stamp. D.C. goes back to the start and Fine goes nowhere.
+    pub fn jump_family(self) -> Option<JumpFamily> {
+        use StampKind::*;
+        match self {
+            Segno | DalSegno => Some(JumpFamily::Segno),
+            Coda | ToCoda => Some(JumpFamily::Coda),
+            DaCapo => Some(JumpFamily::Start),
+            _ => None,
+        }
+    }
+
+    /// A mark drawn as long as a drag across the page (hairpins, slurs), rather than at its
+    /// natural size with a tap.
+    pub fn stretches(self) -> bool {
+        use StampKind::*;
+        matches!(self, Crescendo | Diminuendo | SlurAbove | SlurBelow)
+    }
+
+    /// A boxed rehearsal letter (A to H).
+    pub fn is_rehearsal(self) -> bool {
+        use StampKind::*;
+        matches!(self, RehearsalA | RehearsalB | RehearsalC | RehearsalD | RehearsalE | RehearsalF | RehearsalG | RehearsalH)
+    }
+
+    /// The standard face a music mark's text is set in; `None` for marks drawn as paths and for
+    /// the business stamps.
+    pub fn music_face(self) -> Option<pdfcraft_fonts::Std14> {
+        use StampKind::*;
+        match self {
+            Ppp | Pp | Piano | Mp | Mf | Forte | Ff | Fff | Sfz | Fp | PedalDown => Some(pdfcraft_fonts::Std14::TimesBoldItalic),
+            Cresc | Dim | Rit | Accel | ATempo | DalSegno | ToCoda | DaCapo | Fine => Some(pdfcraft_fonts::Std14::TimesItalic),
+            Finger1 | Finger2 | Finger3 | Finger4 | Finger5 => Some(pdfcraft_fonts::Std14::TimesBold),
+            RehearsalA | RehearsalB | RehearsalC | RehearsalD | RehearsalE | RehearsalF | RehearsalG | RehearsalH => {
+                Some(pdfcraft_fonts::Std14::TimesBold)
+            }
+            Number | JumpFrom | JumpTo => Some(pdfcraft_fonts::Std14::TimesBold),
+            _ => None,
         }
     }
 
@@ -245,6 +437,59 @@ impl StampKind {
             DynReceived => "RECEIVED",
             DynReviewed => "REVIEWED",
             DynRevised => "REVISED",
+            Ppp => "ppp",
+            Pp => "pp",
+            Piano => "p",
+            Mp => "mp",
+            Mf => "mf",
+            Forte => "f",
+            Ff => "ff",
+            Fff => "fff",
+            Sfz => "sfz",
+            Fp => "fp",
+            Crescendo => "Crescendo",
+            Diminuendo => "Diminuendo",
+            Cresc => "cresc.",
+            Dim => "dim.",
+            Rit => "rit.",
+            Accel => "accel.",
+            ATempo => "a tempo",
+            Accent => "Accent",
+            Staccato => "Staccato",
+            Tenuto => "Tenuto",
+            Marcato => "Marcato",
+            Fermata => "Fermata",
+            BreathMark => "Breath mark",
+            Caesura => "Caesura",
+            UpBow => "Up bow",
+            DownBow => "Down bow",
+            PedalDown => "Ped.",
+            PedalUp => "Pedal release",
+            Glasses => "Watch",
+            SlurAbove => "Slur above",
+            SlurBelow => "Slur below",
+            Finger1 => "1",
+            Finger2 => "2",
+            Finger3 => "3",
+            Finger4 => "4",
+            Finger5 => "5",
+            RehearsalA => "A",
+            RehearsalB => "B",
+            RehearsalC => "C",
+            RehearsalD => "D",
+            RehearsalE => "E",
+            RehearsalF => "F",
+            RehearsalG => "G",
+            RehearsalH => "H",
+            Number => "#",
+            Segno => "Segno",
+            Coda => "Coda",
+            DalSegno => "D.S.",
+            ToCoda => "To Coda",
+            DaCapo => "D.C.",
+            Fine => "Fine",
+            JumpFrom => "Jump",
+            JumpTo => "Jump target",
         }
     }
 
@@ -274,6 +519,59 @@ impl StampKind {
             DynReceived => "PCDynReceived",
             DynReviewed => "PCDynReviewed",
             DynRevised => "PCDynRevised",
+            Ppp => "PCMusicPPP",
+            Pp => "PCMusicPP",
+            Piano => "PCMusicP",
+            Mp => "PCMusicMP",
+            Mf => "PCMusicMF",
+            Forte => "PCMusicF",
+            Ff => "PCMusicFF",
+            Fff => "PCMusicFFF",
+            Sfz => "PCMusicSFZ",
+            Fp => "PCMusicFP",
+            Crescendo => "PCMusicCrescendo",
+            Diminuendo => "PCMusicDiminuendo",
+            Cresc => "PCMusicCresc",
+            Dim => "PCMusicDim",
+            Rit => "PCMusicRit",
+            Accel => "PCMusicAccel",
+            ATempo => "PCMusicATempo",
+            Accent => "PCMusicAccent",
+            Staccato => "PCMusicStaccato",
+            Tenuto => "PCMusicTenuto",
+            Marcato => "PCMusicMarcato",
+            Fermata => "PCMusicFermata",
+            BreathMark => "PCMusicBreath",
+            Caesura => "PCMusicCaesura",
+            UpBow => "PCMusicUpBow",
+            DownBow => "PCMusicDownBow",
+            PedalDown => "PCMusicPed",
+            PedalUp => "PCMusicPedUp",
+            Glasses => "PCMusicWatch",
+            SlurAbove => "PCMusicSlurAbove",
+            SlurBelow => "PCMusicSlurBelow",
+            Finger1 => "PCMusicFinger1",
+            Finger2 => "PCMusicFinger2",
+            Finger3 => "PCMusicFinger3",
+            Finger4 => "PCMusicFinger4",
+            Finger5 => "PCMusicFinger5",
+            RehearsalA => "PCMusicRehearsalA",
+            RehearsalB => "PCMusicRehearsalB",
+            RehearsalC => "PCMusicRehearsalC",
+            RehearsalD => "PCMusicRehearsalD",
+            RehearsalE => "PCMusicRehearsalE",
+            RehearsalF => "PCMusicRehearsalF",
+            RehearsalG => "PCMusicRehearsalG",
+            RehearsalH => "PCMusicRehearsalH",
+            Number => "PCMusicNumber",
+            Segno => "PCMusicSegno",
+            Coda => "PCMusicCoda",
+            DalSegno => "PCMusicDalSegno",
+            ToCoda => "PCMusicToCoda",
+            DaCapo => "PCMusicDaCapo",
+            Fine => "PCMusicFine",
+            JumpFrom => "PCMusicJumpFrom",
+            JumpTo => "PCMusicJumpTo",
         }
     }
 
@@ -288,12 +586,47 @@ impl StampKind {
             Approved | Completed | Final | Accepted | DynApproved | DynReceived | DynReviewed => [0.13, 0.55, 0.13],
             NotApproved | Rejected | Void | Confidential | NotForPublicRelease | DynConfidential => [0.80, 0.10, 0.10],
             SignHere | InitialHere | Witness => [0.85, 0.35, 0.05],
+            // Pencil grey: what a player writes into a part.
+            _ if self.group() == StampGroup::Music => [0.15, 0.15, 0.15],
             _ => [0.10, 0.30, 0.70],
         }
     }
 
     /// The stamp's size (points) for its label, as placed with a click.
     pub fn size(self) -> (f64, f64) {
+        use StampKind::*;
+        if self.is_rehearsal() {
+            return (22.0, 22.0);
+        }
+        match self {
+            JumpFrom => return (38.0, 22.0),
+            JumpTo => return (24.0, 24.0),
+            _ => {}
+        }
+        if self == Number {
+            // Room for two digits at a small size; more shrink to fit (or stretch the box).
+            return (18.0, 16.0);
+        }
+        if let Some(face) = self.music_face() {
+            // The text at its usual size, with a little room around it.
+            let size = if face == pdfcraft_fonts::Std14::TimesBoldItalic { MUSIC_DYNAMIC_SIZE } else { MUSIC_WORD_SIZE };
+            return (face.text_width(self.label(), size) + size * 0.4, size * 1.25);
+        }
+        match self {
+            Crescendo | Diminuendo => return (96.0, 18.0),
+            Accent | Tenuto => return (16.0, 12.0),
+            Staccato => return (10.0, 10.0),
+            Marcato | UpBow => return (14.0, 16.0),
+            Fermata => return (26.0, 16.0),
+            BreathMark => return (10.0, 14.0),
+            Caesura => return (14.0, 18.0),
+            DownBow | PedalUp => return (16.0, 16.0),
+            Glasses => return (34.0, 16.0),
+            SlurAbove | SlurBelow => return (80.0, 14.0),
+            Segno => return (20.0, 26.0),
+            Coda => return (24.0, 24.0),
+            _ => {}
+        }
         let w = appearance::text_width(self.label(), 16.0) * 1.12 + 24.0;
         let h = if self.group() == StampGroup::Dynamic { 42.0 } else { 30.0 };
         let w = if self.group() == StampGroup::SignHere { w + 14.0 } else { w };

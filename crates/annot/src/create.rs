@@ -188,6 +188,7 @@ fn subject(shape: &Shape) -> &'static str {
             StampGroup::Dynamic => "Dynamic stamp",
             StampGroup::SignHere => "Sign Here",
             StampGroup::StandardBusiness => "Stamp",
+            StampGroup::Music => "Music mark",
         },
         Shape::CustomStamp { .. } => "Stamp",
         Shape::TypedSignature { .. } => "Signature",

@@ -5,7 +5,8 @@
 //! Windows, macOS and the browser already ignore case, so there the extension passes unchanged.
 
 /// Whether the platform's pickers match filter globs case-sensitively.
-const CASE_SENSITIVE_GLOBS: bool = cfg!(all(unix, not(target_os = "macos")));
+// Android: the app's own browser matches extensions in any case, and wants them plain.
+const CASE_SENSITIVE_GLOBS: bool = cfg!(all(unix, not(target_os = "macos"), not(target_os = "android")));
 
 /// [`rfd::AsyncFileDialog::add_filter`], with each extension matched in any letter case.
 pub(crate) trait AddFilterAnyCase {

@@ -363,6 +363,19 @@ fn tool_input(
     let PageFrame { resp, ptr, .. } = *frame;
     let cx = PageToolContext { ui, resp, xf: &xf, ptr, page: i, doc, info, keys };
     let free = press == PagePress::Free;
+    // The Hand tool follows a music jump mark tapped on the page (segno, coda, D.S., D.C.).
+    if tool == QuickTool::Hand
+        && free
+        && resp.clicked()
+        && let (Some(p), Some(page_info)) = (ptr.within(xf.rect), info.pages.get(i))
+    {
+        let (vx, vy) = xf.screen_to_view(p);
+        if let Some((page, frac)) = crate::music_ui::jump_target(info, i, page_info.view_to_user(vx, vy)) {
+            crate::music_ui::note_jump();
+            view.go_to_page(page);
+            view.goto = Some((page, frac));
+        }
+    }
     if let QuickTool::Measure(measure_tool) = tool {
         crate::measure_ui::page_input(ui, crate::measure_ui::Clicks::of(resp, free), doc, view, pcx, measure_tool, units);
     }

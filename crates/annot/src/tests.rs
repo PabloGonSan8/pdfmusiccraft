@@ -1114,7 +1114,55 @@ fn stamps_draw_their_label_and_by_line() {
     .unwrap();
     assert!(ap_content(&doc, &list(&doc, 0)[j]).contains("(SIGN HERE) Tj"));
     assert_eq!(StampKind::from_name(b"Approved"), Some(StampKind::Approved), "standard names");
-    assert!(StampKind::ALL.iter().all(|k| k.size().0 >= 80.0));
+    assert!(StampKind::ALL.iter().filter(|k| k.group() != StampGroup::Music).all(|k| k.size().0 >= 80.0));
+}
+
+#[test]
+fn music_marks_draw_their_words_and_signs() {
+    let mut doc = fixture();
+    for (i, kind) in StampKind::MUSIC.into_iter().enumerate() {
+        assert_eq!(kind.group(), StampGroup::Music);
+        assert_eq!(StampKind::from_name(kind.name().as_bytes()), Some(kind), "names are unique");
+        let (w, h) = kind.size();
+        let x = 40.0 + (i % 6) as f64 * 90.0;
+        let y = 60.0 + (i / 6) as f64 * 30.0;
+        let shape = Shape::Stamp { rect: [x, y, x + w, y + h], stamp: kind, by: None };
+        let j = add_annotation(
+            &mut doc,
+            &NewAnnotation { page: 0, style: Style::default_for(&shape), shape, contents: String::new(), author: "Ada".into() },
+            &Meta::default(),
+        )
+        .unwrap();
+        let ap = ap_content(&doc, &list(&doc, 0)[j]);
+        match kind.music_face() {
+            // Words in Times, never the business stamps' frame or Helvetica.
+            Some(face) => {
+                let name = crate::text_style::resource_name(face);
+                let shown = match kind {
+                    StampKind::JumpFrom | StampKind::JumpTo => "A",
+                    _ => kind.label(),
+                };
+                assert!(ap.contains(&format!("/{name} ")) && ap.contains(&format!("({shown}) Tj")), "{kind:?}: {ap}");
+                assert_eq!(ap.contains("re S"), kind.is_rehearsal(), "only rehearsal letters are boxed: {kind:?}: {ap}");
+            }
+            // Signs are paths alone.
+            None => assert!(!ap.contains("Tj") && (ap.contains("S\n") || ap.contains("f\n")), "{kind:?}: {ap}"),
+        }
+    }
+    assert!(list(&doc, 0).iter().any(|d| d.name(b"Name") == Some(b"PCMusicF".as_slice())), "the forte mark is saved under its name");
+    // A number mark draws the number it was given.
+    let (w, h) = StampKind::Number.size();
+    let shape = Shape::Stamp { rect: [300.0, 600.0, 300.0 + w, 600.0 + h], stamp: StampKind::Number, by: Some("12".into()) };
+    let j = add_annotation(
+        &mut doc,
+        &NewAnnotation { page: 0, style: Style::default_for(&shape), shape, contents: String::new(), author: "Ada".into() },
+        &Meta::default(),
+    )
+    .unwrap();
+    assert!(ap_content(&doc, &list(&doc, 0)[j]).contains("(12) Tj"));
+    // A hairpin stretched to a long passage stays a thin wedge.
+    let (w, h) = StampKind::Crescendo.size();
+    assert!(w > h * 4.0);
 }
 
 #[test]

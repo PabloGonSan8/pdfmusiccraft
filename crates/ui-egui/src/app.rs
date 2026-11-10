@@ -192,6 +192,7 @@ impl PdfCraftApp {
             document_copy: None,
             unlock_prompt: None,
             full_screen: false,
+            touch: Default::default(),
             inbox: Default::default(),
             startup_inbox: Default::default(),
             startup_superseded: false,
@@ -425,7 +426,8 @@ impl PdfCraftApp {
 
     /// Read mode and full screen hide the hotbar (the quick tools), and its tools window with it.
     pub(crate) fn hotbar_hidden(&self) -> bool {
-        self.mode == crate::Mode::Read || self.full_screen
+        // The touch reading view too: its own bar has the tools.
+        self.mode == crate::Mode::Read || self.full_screen || touch::owns_window(self)
     }
 
     /// The pages are covered, and no page key reaches them, a menu click's included: by a dialog or
@@ -854,6 +856,22 @@ impl PdfCraftApp {
             }
             return;
         }
+        if touch::owns_window(self) {
+            // The touch start screen or music view: the document alone; a tap brings its bar.
+            touch::frame(self, ui);
+            dialogs::show(self, &ctx);
+            touch::browser(self, &ctx);
+            self.show_progress(&ctx);
+            widgets::toast(self, &ctx);
+            self.finish_render_frame(&ctx);
+            if let Some(mut control) = self.control.take() {
+                control.finish_frame(&ctx, self);
+                self.control = Some(control);
+            }
+            return;
+        }
+        touch::editor_overlay(self, &ctx);
+        touch::browser(self, &ctx);
         self.sync_window_frame(&ctx);
         if self.draws_window_frame() {
             window_controls::resize_edges(&ctx);

@@ -91,6 +91,20 @@ pub fn right_panel(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                         {
                             panel_command = Some(c);
                         }
+                        // With a finger, the commonest page tools as buttons of their own.
+                        if panel == RightPanel::Pages && crate::touch::on() {
+                            ui.add_enabled_ui(!modal && view.panel_drag.is_none() && bm_editable, |ui| {
+                                for (id, icon, tip) in [
+                                    ("page.delete", "trash-2", tl!("Delete the selected pages")),
+                                    ("page.rotate", "rotate-cw", tl!("Rotate the selected pages clockwise")),
+                                    ("page.rotate_ccw", "rotate-ccw", tl!("Rotate the selected pages counterclockwise")),
+                                ] {
+                                    if icons::button(ui, icon, 36.0, false, tip).clicked() {
+                                        panel_command = Some(id);
+                                    }
+                                }
+                            });
+                        }
                         // Right to left: close, "…", filter, search (Acrobat's order left to right).
                         if panel == RightPanel::Comments {
                             panel_command = crate::comments_panel::header_controls(ui, info, view, doc.comments_hidden());
@@ -431,6 +445,11 @@ pub fn right_panel(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
     }
     if let Some(c) = panel_command {
         app.run_command(c);
+        // With a finger, pages turned or deleted are kept at once: saved into the file, so they
+        // are that way next time.
+        if crate::touch::on() && matches!(c, "page.delete" | "page.rotate" | "page.rotate_ccw") {
+            app.run_command("file.save");
+        }
     }
     if let Some(a) = a11y_action {
         app.a11y_action(index, a);

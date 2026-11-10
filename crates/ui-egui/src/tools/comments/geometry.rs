@@ -111,6 +111,19 @@ pub(crate) fn reshaped(points: &[[f64; 2]], i: usize, to: [f64; 2], shift: bool)
     out
 }
 
+/// Whether handles are sized for a finger (the touch interface sets it).
+static FINGER_HANDLES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Size the resize handles for a finger (or back for a mouse).
+pub fn set_finger_handles(on: bool) {
+    FINGER_HANDLES.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// How near a handle (screen points) a press takes it, and how large it is drawn.
+pub(super) fn handle_reach() -> (f32, f32) {
+    if FINGER_HANDLES.load(std::sync::atomic::Ordering::Relaxed) { (24.0, 9.0) } else { (7.0, 4.5) }
+}
+
 pub(super) const HANDLES: [(i8, i8); 8] = [(-1, -1), (0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0)];
 
 pub(super) fn handle_pos(r: Rect, (hx, hy): (i8, i8)) -> Pos2 {

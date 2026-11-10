@@ -113,7 +113,12 @@ pub(crate) fn body(
     labels: &[String],
     thumb: &mut dyn FnMut(usize) -> Option<egui::TextureId>,
 ) -> (bool, bool) {
-    ui.set_width(820.0);
+    // As wide as the screen allows; narrower than the two columns, the preview goes under the
+    // settings (a tablet held upright).
+    let screen_w = ui.ctx().input(|i| i.viewport_rect().width());
+    let width = (screen_w - 48.0).clamp(320.0, 820.0);
+    let stacked = width < 800.0;
+    ui.set_width(width);
     ui.label(egui::RichText::new(tl!("Print")).font(theme::semibold(18.0)));
     ui.add_space(8.0);
     let settings = d.settings(sizes.len(), labels);
@@ -136,10 +141,11 @@ pub(crate) fn body(
     // offers less, which would size this area by the dialog shown before. `auto_shrink` still
     // shrinks it to contents that fit.
     egui::ScrollArea::vertical().max_height(max_h).min_scrolled_height(max_h).auto_shrink([false, true]).show(ui, |ui| {
-    ui.horizontal_top(|ui| {
+    let columns = if stacked { egui::Layout::top_down(egui::Align::Min) } else { egui::Layout::left_to_right(egui::Align::Min) };
+    ui.with_layout(columns, |ui| {
         // Settings.
         ui.vertical(|ui| {
-            ui.set_width(470.0);
+            ui.set_width(470.0_f32.min(width));
             egui::Grid::new("print-top").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
                 let printer_caption = ui.label(tl!("Printer:"));
                 let before = d.printer.clone();

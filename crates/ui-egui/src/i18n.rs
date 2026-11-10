@@ -394,9 +394,22 @@ pub fn system_lang() -> Lang {
     *SYSTEM.get_or_init(detect_system_lang)
 }
 
+/// The system language as the platform reports it where no locale variable says (Android: the
+/// device configuration's language and country, `es-ES`), given by the app before its first frame.
+static PLATFORM_LANGUAGE: OnceLock<String> = OnceLock::new();
+
+/// Tell the interface the system language (a BCP 47 or `ll_CC` tag), for a platform where the
+/// locale variables say nothing. Only the first call counts; call it before the first frame.
+pub fn set_platform_language(tag: &str) {
+    let _ = PLATFORM_LANGUAGE.set(tag.to_owned());
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn detect_system_lang() -> Lang {
     if let Some(l) = env_lang(|var| std::env::var(var).ok()) {
+        return l;
+    }
+    if let Some(l) = PLATFORM_LANGUAGE.get().and_then(|t| lang_from_tag(t)) {
         return l;
     }
     // Apps started from the Finder don't inherit LANG: use the macOS preferred-languages list.

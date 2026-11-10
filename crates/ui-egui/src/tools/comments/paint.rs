@@ -77,7 +77,7 @@ pub(crate) fn paint_page(ui: &egui::Ui, painter: &egui::Painter, cx: &PageCx<'_>
         if cx.allowed && resizable(a) {
             for h in HANDLES {
                 let c = handle_pos(r, h);
-                painter.circle(c, 4.5, Color32::WHITE, Stroke::new(1.0, SELECT_BLUE));
+                painter.circle(c, super::geometry::handle_reach().1, Color32::WHITE, Stroke::new(1.0, SELECT_BLUE));
             }
         }
         // A callout's arrow point and knee, over its text box's frame.
@@ -382,21 +382,30 @@ pub(super) fn erase(cx: &PageCx<'_>, path: &[[f64; 2]]) -> Option<Edit> {
     // Exactly the preview's width: no floor, which at a high zoom rubbed past it.
     let radius = eraser_radius_px(cx.prefs.style(CommentTool::Eraser).width) / zoom;
     let b = path.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |r, p| [r[0].min(p[0]), r[1].min(p[1]), r[2].max(p[0]), r[3].max(p[1])]);
-    let mut hits: Vec<usize> = cx
+    let near = |r: [f32; 4], x0: f64, y0: f64, x1: f64, y1: f64| {
+        (r[0] as f64) <= x1 + radius && (r[2] as f64) >= x0 - radius && (r[1] as f64) <= y1 + radius && (r[3] as f64) >= y0 - radius
+    };
+    // Drawings it crosses lose what it rubs; stamps it touches (music marks…) go whole.
+    let mut hits: Vec<(usize, bool)> = cx
         .comments()
-        .filter(|a| a.subtype == "Ink" && !a.locked)
-        .filter(|a| {
-            let r = a.rect;
-            (r[0] as f64) <= b[2] + radius && (r[2] as f64) >= b[0] - radius && (r[1] as f64) <= b[3] + radius && (r[3] as f64) >= b[1] - radius
+        .filter(|a| !a.locked)
+        .filter_map(|a| match a.subtype.as_str() {
+            "Ink" if near(a.rect, b[0], b[1], b[2], b[3]) => Some((a.index, false)),
+            "Stamp" if path.iter().any(|p| near(a.rect, p[0], p[1], p[0], p[1])) => Some((a.index, true)),
+            _ => None,
         })
-        .map(|a| a.index)
         .collect();
     if hits.is_empty() {
         return None;
     }
-    // Later indices first: deleting an emptied drawing shifts the ones after it.
-    hits.sort_unstable_by(|a, b| b.cmp(a));
-    let edits = hits.into_iter().map(|index| Edit::EraseInk { page: cx.page, index, path: path.to_vec(), radius }).collect();
+    // Later indices first: deleting an emptied drawing or a stamp shifts the ones after it.
+    hits.sort_unstable_by_key(|h| std::cmp::Reverse(h.0));
+    let edits = hits
+        .into_iter()
+        .map(|(index, stamp)| {
+            if stamp { Edit::DeleteAnnotation { page: cx.page, index } } else { Edit::EraseInk { page: cx.page, index, path: path.to_vec(), radius } }
+        })
+        .collect();
     Some(Edit::Batch { label: "Erase".into(), edits })
 }
 

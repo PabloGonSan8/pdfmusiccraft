@@ -55,7 +55,7 @@ pub(crate) enum Ask {
 }
 
 /// What to do with the chosen paths, on a later frame.
-type Then = Box<dyn FnOnce(&mut PdfCraftApp, Vec<PathBuf>) + Send>;
+pub(crate) type Then = Box<dyn FnOnce(&mut PdfCraftApp, Vec<PathBuf>) + Send>;
 
 /// A finished pick, waiting for the next frame.
 struct Picked {
@@ -158,7 +158,7 @@ impl Pickers {
 
     /// Queue a pick that is already known (tests and automation). Like a real pick, it keeps
     /// the flag until the frame uses it.
-    fn deliver(&self, target: Option<PickTarget>, paths: Vec<PathBuf>, then: Then) {
+    pub(crate) fn deliver(&self, target: Option<PickTarget>, paths: Vec<PathBuf>, then: Then) {
         self.done.lock().unwrap_or_else(PoisonError::into_inner).push(Picked { target, paths, then });
     }
 
@@ -210,9 +210,17 @@ impl PdfCraftApp {
     }
 
     /// [`Self::ask`] once `showing` is claimed for it.
+    // Android answers with the app's own browser and returns before the native panels.
+    #[cfg_attr(target_os = "android", allow(unreachable_code, unused_variables))]
     fn show_picker(&mut self, ask: Ask, target: Option<PickTarget>, then: Then) -> bool {
         if let Some(paths) = self.pick_override.clone() {
             self.pickers.deliver(target, paths.into_iter().map(PathBuf::from).collect(), then);
+            return true;
+        }
+        // Android has no native panel: the app's own file browser answers instead.
+        #[cfg(target_os = "android")]
+        {
+            self.touch.browser = Some(crate::touch::Browser::new(ask, target, then, self.touch.last_dir.clone()));
             return true;
         }
         // On macOS creating the future shows the panel; it must happen here, on the main thread.
