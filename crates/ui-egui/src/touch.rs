@@ -113,6 +113,8 @@ pub struct Touch {
     shelf: Option<Vec<PathBuf>>,
     /// The start screen's search text.
     search: String,
+    /// When (egui time) the start screen last read the library folders.
+    shelf_read_at: f64,
     /// The folders of scores the start screen offers as concerts, with how many PDFs each has.
     concerts: Vec<(PathBuf, usize)>,
     /// The concert open now: its scores in order, gone through with Previous and Next.
@@ -234,9 +236,19 @@ pub(crate) fn frame(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
 /// The start screen: a grid of the scores in the library folders and the recent files, a search
 /// field, and a way to open one from anywhere.
 fn home(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
+    // Nothing found yet: look again every few seconds, so scores show once the player has given
+    // the app access to them in Android's settings and come back.
+    let now = ui.input(|i| i.time);
+    if app.touch.shelf.as_ref().is_some_and(Vec::is_empty) && app.touch.concerts.is_empty() && now - app.touch.shelf_read_at > 2.0 {
+        app.touch.shelf = None;
+    }
     if app.touch.shelf.is_none() {
         app.touch.shelf = Some(shelf(app));
         app.touch.concerts = concerts(&app.touch.library);
+        app.touch.shelf_read_at = now;
+    }
+    if app.touch.shelf.as_ref().is_some_and(Vec::is_empty) {
+        ui.ctx().request_repaint_after(std::time::Duration::from_secs(2));
     }
     let t = crate::theme::Tokens::get(ui.ctx());
     let mut concert: Option<PathBuf> = None;
@@ -345,8 +357,17 @@ fn home(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                         "No PDFs yet. Put scores in Download or Documents, or tap \"Open from…\".",
                         "Aún no hay PDFs. Copia partituras en Descargas o Documentos, o toca \"Abrir desde…\".",
                     )
+                    .to_owned()
+                        + es(
+                            "
+
+If your scores are there but don't show, the app needs \"All files access\": Settings ▸ Apps ▸ PdfMusicCraft ▸ Permissions ▸ Files.",
+                            "
+
+Si tus partituras están ahí pero no salen, la app necesita \"Acceso a todos los archivos\": Ajustes ▸ Aplicaciones ▸ PdfMusicCraft ▸ Permisos ▸ Archivos.",
+                        )
                 } else {
-                    es("No score has that name.", "Ninguna partitura se llama así.")
+                    es("No score has that name.", "Ninguna partitura se llama así.").to_owned()
                 };
                 ui.label(RichText::new(text).size(17.0).color(t.text_muted));
             });

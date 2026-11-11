@@ -3,7 +3,7 @@ name = "pdfcraft-android"
 description = "PdfCraft on Android (build with `cargo apk build -p pdfcraft-android --lib --release`)"
 # PdfMusicCraft's own version (semver), not PdfCraft's: cargo-apk derives the APK's
 # versionName and versionCode from it, and a release must raise it to install over the last.
-version = "1.0.0"
+version = "1.0.1"
 edition.workspace = true
 license.workspace = true
 publish = false

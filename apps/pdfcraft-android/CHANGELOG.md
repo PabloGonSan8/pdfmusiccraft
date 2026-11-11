@@ -5,6 +5,13 @@ PdfMusicCraft's versions, newest first. The format follows
 [Semantic Versioning](https://semver.org/). Downloads are on the
 [Releases](https://github.com/PabloGonSan8/pdfcraft/releases) page.
 
+## [1.0.1]
+
+### Fixed
+- A new install listed no scores and opened no folders until "All files access" was found and
+  turned on by hand in Android's settings. The app now explains it on first start and opens that
+  setting with one tap; the scores appear as soon as you come back.
+
 ## [1.0.0] 
 
 The first public version.
