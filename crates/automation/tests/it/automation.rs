@@ -7127,6 +7127,40 @@ fn stamps_through_tools() {
     assert!(matches!(a.call("stamp_custom", &json!({ "doc": doc, "page": 1, "path": "nope.png", "at": [1, 1] })), Err(ToolError::Failed(_))));
 }
 
+/// Music marks are stamps: a dynamic is written as its letters, a hairpin and a fermata are
+/// drawn, and a word is found with or without its full stop.
+#[test]
+fn music_marks_through_tools() {
+    let dir = workdir("music_marks");
+    let mut a = auto(&dir);
+    // The fixture's pages are 200 × 300 pt: every mark sits inside.
+    let doc = ok(&mut a, "doc_open", json!({ "path": "a.pdf" }))["doc"].as_u64().unwrap();
+    for (mark, at) in [
+        ("mf", [40, 40]),
+        ("crescendo", [130, 40]),
+        ("fermata", [40, 90]),
+        ("rit", [90, 90]),
+        ("a tempo", [150, 90]),
+        ("rehearsal f", [40, 150]),
+        ("finger 3", [80, 150]),
+        ("slur above", [140, 150]),
+    ] {
+        ok(&mut a, "comment_add", json!({ "doc": doc, "page": 1, "type": "stamp", "stamp": mark, "at": at }));
+    }
+    let list = ok(&mut a, "comment_list", json!({ "doc": doc }));
+    assert_eq!(list["count"], 8, "{list}");
+    let text = page_text(&mut a, doc)[0].clone();
+    assert!(text.contains("mf") && text.contains("rit.") && text.contains("a tempo") && text.contains('F') && text.contains('3'), "{text}");
+    assert!(!text.contains("Crescendo") && !text.contains("Fermata"), "signs are drawn, not written: {text}");
+    assert!(matches!(
+        a.call("comment_add", &json!({ "doc": doc, "page": 1, "type": "stamp", "stamp": "mezzo", "at": [1, 1] })),
+        Err(ToolError::InvalidArgs(_))
+    ));
+    // A number mark writes the number it is given.
+    ok(&mut a, "comment_add", json!({ "doc": doc, "page": 1, "type": "stamp", "stamp": "number", "text": "12", "at": [100, 200] }));
+    assert!(page_text(&mut a, doc)[0].contains("12"));
+}
+
 /// #4077: a PDF page placed at a given width (a text column, 483 pt) through `rect`, fitted
 /// inside it keeping its shape and centred, and still vector (its text is text).
 #[test]

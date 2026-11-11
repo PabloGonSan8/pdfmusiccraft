@@ -141,14 +141,16 @@ pub(super) fn pages(
             if rect.intersects(ui.clip_rect().expand(200.0)) {
                 view.need_thumbnail(i, rect.intersects(ui.clip_rect()));
             }
+            // With a finger, a quick drag scrolls; resting on the page first moves it.
+            let scrolls = crate::touch::drag_scrolls(ui, &resp);
             // Only the primary button drags pages (the middle button scrolls, the secondary one opens the menu).
-            if resp.drag_started_by(egui::PointerButton::Primary) {
+            if !scrolls && resp.drag_started_by(egui::PointerButton::Primary) {
                 if !view.target_pages().contains(&i) {
                     view.click_page(i, egui::Modifiers::NONE, true);
                 }
                 view.panel_drag = Some(view.target_pages());
             }
-            if resp.drag_stopped() {
+            if !scrolls && resp.drag_stopped() {
                 dropped = true;
             }
             let info = crate::i18n::fmt(tl!("Page {label}"), &[("label", &p.label)]);

@@ -55,24 +55,69 @@ mod b64 {
 /// The Stamp tool on one page: a click that nobody holds (`free`) places stamp `kind` centred on
 /// it, upright as the page is shown. `true` once one is placed.
 pub(crate) fn place(cx: PageToolContext<'_>, kind: pdfcraft_engine::StampKind, by_line: &str, author: &str, free: bool, view: &mut DocView) -> bool {
-    let PageToolContext { resp, xf, ptr, page, info, .. } = cx;
-    let (Some(p), Some(page_info)) = (ptr.within(xf.rect), info.pages.get(page)) else { return false };
+    let PageToolContext { ui, resp, xf, ptr, page, info, .. } = cx;
+    let Some(page_info) = info.pages.get(page) else { return false };
+    let (w, h) = kind.size();
+    // A dotted note is wider by its dot; its head stays where the tap puts it.
+    let note_by = (kind.note().is_some() && !kind.is_metronome()).then(crate::music_ui::note_by).flatten();
+    let (w, anchor_scale) = if note_by.is_some() { (w + pdfcraft_engine::NOTE_DOT_ROOM, w / (w + pdfcraft_engine::NOTE_DOT_ROOM)) } else { (w, 1.0) };
+    // A hairpin or slur dragged across the page: as long as the drag, at its own height, level
+    // midway between the drag's ends. A tap still places one at its natural length.
+    let mut span = None;
+    if kind.stretches()
+        && free
+        && let (Some(o), Some(p)) = (ptr.origin.filter(|o| xf.rect.contains(*o)), ptr.pos)
+        && (o.x - p.x).abs() > 12.0
+    {
+        if resp.dragged() {
+            let stroke = egui::Stroke::new(2.0, egui::Color32::from_rgb(40, 40, 40));
+            let mid = (o.y + p.y) / 2.0;
+            ui.painter().line_segment([egui::pos2(o.x, mid), egui::pos2(p.x, mid)], stroke);
+        }
+        if resp.drag_stopped() {
+            let (ox, oy) = xf.screen_to_view(o);
+            let (px, py) = xf.screen_to_view(p);
+            span = Some(((f64::from(ox.min(px)), f64::from(ox.max(px))), f64::from((oy + py) / 2.0)));
+        }
+    }
+    let Some(p) = ptr.within(xf.rect).or(span.and(ptr.pos)) else { return false };
     view.cursor.claim(Layer::ToolArea, egui::CursorIcon::Crosshair);
-    if !(free && resp.clicked()) {
+    if span.is_none() && !(free && resp.clicked()) {
         return false;
     }
     let (vx, vy) = xf.screen_to_view(p);
-    let (w, h) = kind.size();
-    let a = page_info.view_to_user((f64::from(vx) - w / 2.0) as f32, (f64::from(vy) - h / 2.0) as f32);
-    let b = page_info.view_to_user((f64::from(vx) + w / 2.0) as f32, (f64::from(vy) + h / 2.0) as f32);
+    // A tap puts the stamp's anchor under the pointer (a written note's head, others' middle).
+    let (fx, fy) = if span.is_some() { (0.5, 0.5) } else { kind.anchor() };
+    let fx = if kind.note() == Some((pdfcraft_engine::NoteValue::Whole, false)) { fx } else { fx * anchor_scale };
+    let ((x0, x1), cy) = span.unwrap_or(((f64::from(vx) - w * fx, f64::from(vx) + w * (1.0 - fx)), f64::from(vy)));
+    let a = page_info.view_to_user(x0 as f32, (cy - h * (1.0 - fy)) as f32);
+    let b = page_info.view_to_user(x1 as f32, (cy + h * fy) as f32);
     let rect = [f64::from(a[0].min(b[0])), f64::from(a[1].min(b[1])), f64::from(a[0].max(b[0])), f64::from(a[1].max(b[1]))];
-    let by = (kind.group() == pdfcraft_engine::StampGroup::Dynamic).then(|| by_line.to_owned());
+    let by = match kind {
+        // A number mark shows the palette's number (and moves on to the next when counting up).
+        pdfcraft_engine::StampKind::Number => Some(crate::music_ui::take_number()),
+        // A named jump carries the palette's letter.
+        pdfcraft_engine::StampKind::JumpFrom | pdfcraft_engine::StampKind::JumpTo => Some(crate::music_ui::jump_letter()),
+        // A metronome mark carries the palette's tempo.
+        k if k.is_metronome() => Some(crate::music_ui::bpm()),
+        // A written note: dotted or not, as the palette says.
+        k if k.note().is_some() => note_by,
+        k if k.group() == pdfcraft_engine::StampGroup::Dynamic => Some(by_line.to_owned()),
+        _ => None,
+    };
+    // A jump mark carries text saying which jump it is, which is how a tap knows where it leads.
+    let contents = if kind.note().is_some() && !kind.is_metronome() {
+        // A written note's text says what it is, so the music sheet can turn it or dot it.
+        crate::music_ui::note_contents(kind, by.as_deref())
+    } else {
+        crate::music_ui::jump_contents(kind, by.as_deref())
+    };
     let shape = pdfcraft_engine::Shape::Stamp { rect, stamp: kind, by };
     view.pending_edit = Some(pdfcraft_engine::Edit::AddAnnotation(pdfcraft_engine::NewAnnotation {
         page,
         style: pdfcraft_engine::Style::default_for(&shape),
         shape,
-        contents: String::new(),
+        contents,
         author: author.to_owned(),
     }));
     true

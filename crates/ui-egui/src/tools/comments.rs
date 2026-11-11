@@ -32,6 +32,7 @@ mod state;
 pub(crate) use composer::{composer, submit_key};
 #[cfg(test)]
 use geometry::handle_pos;
+pub use geometry::set_finger_handles;
 #[cfg(test)]
 pub(crate) use geometry::{caret_snap, snapped_caret};
 pub(crate) use geometry::{corner_ratio, page_rotation, resized};

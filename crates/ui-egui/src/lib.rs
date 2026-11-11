@@ -9,6 +9,13 @@
 // The settings object in `persist` is one `json!` literal past the default limit of 128.
 #![recursion_limit = "256"]
 
+// Android has no rfd backend: a stand-in with the same API whose dialogs are always cancelled.
+#[cfg(target_os = "android")]
+extern crate pdfcraft_no_dialogs as rfd;
+// Nor an arboard one: a stand-in whose system clipboard never opens.
+#[cfg(target_os = "android")]
+extern crate pdfcraft_no_clipboard as arboard;
+
 /// PdfCraft as craft-update knows it, with its 128 px icon and accent colour: the update
 /// prompt shows both, and an AppImage's menu entry gets the icon.
 #[cfg(not(target_arch = "wasm32"))]
@@ -37,6 +44,9 @@ macro_rules! tl_ctx {
 pub mod canvas;
 mod chrome;
 mod image_engine;
+mod music_ui;
+/// The touch interface (reading view, music sheet, Android's file browser).
+pub mod touch;
 pub use combine_grid::ThumbState as CombineThumb;
 pub use combine_ui::{Columns as CombineColumns, CombineView, Lock as CombineLock, SortKey};
 mod commands;
@@ -547,6 +557,8 @@ pub struct PdfCraftApp {
     document_copy: Option<DocumentCopy>,
     pub unlock_prompt: Option<UnlockPrompt>,
     pub full_screen: bool,
+    /// The touch interface (tablets): its reading view and music sheet.
+    pub touch: touch::Touch,
     /// Files delivered asynchronously (web drag-and-drop, web file picker).
     pub inbox: Inbox,
     /// The browser's startup `?file=` download. Unlike a deliberate Open or drop, a late

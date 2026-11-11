@@ -247,6 +247,9 @@ pub(super) fn stamp_palette(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens
                 }
             }
         }
+        // Music marks: small, so they sit side by side, by section.
+        widgets::section_title(ui, crate::music_ui::es("Music", "Música"));
+        crate::music_ui::palette(app, ui, false);
         crate::stamps_ui::palette_section(app, ui, t);
     });
 }

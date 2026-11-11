@@ -10,3 +10,12 @@ plan/
 # A craft-fonts checkout used as the optional CRAFT_FONTS_DIR build input (CI and releases put it here).
 /craft-fonts
 .claude/
+# The Android build's own target directory (apps/pdfcraft-android/README.md).
+/target-android
+# Built Android packages: they go on GitHub Releases, never into the repository.
+*.apk
+*.aab
+*.idsig
+# Signing keys: kept outside the repository and never committed (apps/pdfcraft-android/RELEASING.md).
+*.jks
+*.keystore

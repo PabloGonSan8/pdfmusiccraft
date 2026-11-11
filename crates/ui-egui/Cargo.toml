@@ -31,7 +31,9 @@ pdfcraft-platform = { workspace = true }
 egui = { workspace = true, features = ["bytemuck", "default_fonts", "monochrome_emoji_fonts"] }
 egui_extras = { workspace = true }
 # `glow` is always on: `eframe::App::on_exit` takes a GL context when that feature is enabled.
-eframe = { workspace = true, features = ["default_fonts", "wgpu", "glow", "accesskit", "persistence", "links", "clipboard"] }
+# eframe's `accesskit` (the screen-reader bridge) is added below off Android: there eframe allows
+# it only with GameActivity, and the Android app runs in a NativeActivity.
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "glow", "persistence", "links", "clipboard"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
@@ -44,7 +46,6 @@ web-time = { workspace = true }
 # Hands rendered rasters to egui as its pixels, without copying; already in the tree through egui and wgpu.
 bytemuck = { version = "1", features = ["extern_crate_alloc"] }
 
-rfd = { workspace = true }
 png = "0.18"
 base64 = "0.23"
 # Unicode bidi paragraph segmentation for right-to-left comment wrapping; egui 0.37's epaint owns
@@ -54,12 +55,25 @@ unicode-bidi = "0.3"
 # that put fallback faces on the interface's baseline (#1676); the same skrifa egui uses.
 skrifa = "0.44"
 
+# Native file dialogs. rfd has no Android backend: there `pdfcraft-no-dialogs` stands in under
+# the same name (`extern crate … as rfd` in lib.rs), and every dialog is cancelled.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rfd = { workspace = true }
+eframe = { workspace = true, features = ["accesskit"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+pdfcraft-no-dialogs = { path = "../no-dialogs" }
+# Nor has arboard: its stand-in, whose system clipboard never opens.
+pdfcraft-no-clipboard = { path = "../no-clipboard" }
+
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
+# Create ▸ Clipboard (images; already in the tree through egui-winit).
+arboard = { version = "3.6", default-features = false, features = ["image-data"] }
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 craft-update = { workspace = true }
 # Control-channel tokens.
 getrandom = "0.4"
-# Create ▸ Clipboard (images; already in the tree through egui-winit).
-arboard = { version = "3.6", default-features = false, features = ["image-data"] }
 # Waits for native file pickers off the UI thread (already in the tree through wgpu).
 pollster = "1.0"
 

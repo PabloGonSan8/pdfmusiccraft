@@ -618,7 +618,7 @@ pub struct DocView {
     /// Page sizes (width, height) in points (view space), for mapping text positions to scroll offsets.
     page_sizes: Vec<(f32, f32)>,
     /// Screen rects of the pages drawn last frame (hit-testing, tests, automation).
-    screen_rects: Vec<(usize, Rect)>,
+    pub(crate) screen_rects: Vec<(usize, Rect)>,
     screen_xforms: Vec<(usize, PageXform)>,
     /// Pixels per point last frame, for telling a rounding sliver of a page from a visible one.
     screen_ppp: f32,
@@ -2694,18 +2694,28 @@ fn page_scroll_area(ui: &egui::Ui, view: &mut DocView, geometry: &ScrollGeometry
         && !middle_gesture
         && let Some(id) = view.page_widget.filter(|id| ui.ctx().is_being_dragged(*id))
     {
-        let moved = if ui.ctx().drag_started_id() == Some(id) {
+        // Two fingers move the page with their midpoint (while they pinch it), not with the first
+        // finger, which would drag the page against the zoom.
+        let moved = if let Some(touch) = ui.input(|i| i.multi_touch()) {
+            touch.translation_delta
+        } else if ui.ctx().drag_started_id() == Some(id) {
             ui.input(|i| i.pointer.total_drag_delta()).unwrap_or(Vec2::ZERO)
         } else {
             ui.input(|i| i.pointer.delta())
         };
+        // With the touch interface and the score fitted, one finger moves along one axis.
+        let moved = crate::touch::lock_axis(ui, id, moved, view.zoom);
         if moved != Vec2::ZERO {
             view.end_find_following();
         }
+        // The drag's speed, so a flick glides on after the finger lifts.
+        view.fling.drag(ui.input(|i| i.time), moved);
         // Within the content, as egui keeps it: past an end the page would show there for a
         // frame and spring back. `max` is never NaN or below zero, so the clamp can't panic.
         let max = vec2((content_w - avail.width()).max(0.0), (content_h - avail.height()).max(0.0));
         scroll = scroll.scroll_offset((view.last_scroll - moved).clamp(Vec2::ZERO, max));
+    } else if hand && !middle_gesture && view.page_widget.is_some_and(|id| ui.ctx().drag_stopped_id() == Some(id)) {
+        view.fling.release(ui.input(|i| i.time), true);
     }
     if let Some(v) = view.sync_scroll.take() {
         scroll = scroll.scroll_offset(v);
@@ -3299,6 +3309,8 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     let row = shown_row(view, &rects);
     let visible_pages: Vec<usize> = if view.continuous { (0..rects.len()).collect() } else { row.clone() };
     let (y_shift, content_h) = vertical_placement(view.continuous, &rects, &visible_pages, avail.height(), ui.ctx().pixels_per_point());
+    // Room below the last page for what the touch interface lays over the bottom (its music sheet).
+    let content_h = content_h + crate::touch::bottom_room();
 
     let mut scroll = page_scroll_area(
         ui,

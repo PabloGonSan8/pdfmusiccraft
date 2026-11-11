@@ -51,6 +51,7 @@ pub fn text_lines_height(lines: &[String], size: f64) -> f64 {
 
 use crate::{Document, NOTE_SIZE, Rgb, n};
 
+mod music;
 mod symbols;
 
 pub(crate) use symbols::display_stamp;
@@ -1389,6 +1390,9 @@ fn draw_stamp(context: &AppearanceContext<'_>, mut drawing: AppearanceDrawing) -
             }
             let kind = crate::StampKind::from_name(other)?;
             let by = d.get(b"PCByLine").and_then(|o| o.as_string()).map(PdfString::to_text);
+            if kind.group() == crate::StampGroup::Music {
+                return Some(turned(music::draw(kind, draw, stroke.unwrap_or(kind.color()), by.as_deref(), opacity, res)));
+            }
             let sign_here = kind.group() == crate::StampGroup::SignHere;
             return Some(turned(stamp(kind.label(), sign_here, draw, stroke.unwrap_or(kind.color()), by.as_deref(), opacity, res)));
         }

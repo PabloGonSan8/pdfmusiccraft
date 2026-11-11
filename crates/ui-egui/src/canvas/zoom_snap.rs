@@ -121,6 +121,13 @@ impl PdfCraftApp {
     /// low-resolution render) and zoom so that spans the window's width. A blank page fits the
     /// width.
     pub fn fit_visible(&mut self, index: usize) -> Result<(), String> {
+        self.fit_visible_with(index, None)
+    }
+
+    /// [`Self::fit_visible`], counting as ink only the columns and rows with at least `dense`
+    /// (a fraction of the page's height or width) of their pixels inked, when given: a scan's
+    /// specks near the edges then don't hold the margins in (the touch music view's fit).
+    pub(crate) fn fit_visible_with(&mut self, index: usize, dense: Option<f32>) -> Result<(), String> {
         let view = &self.views[index];
         let page = view.current;
         let doc = self.session.get(view.id).ok_or("no document")?;
@@ -135,7 +142,11 @@ impl PdfCraftApp {
         }
         let rot = view.rotation;
         let view = &mut self.views[index];
-        match ink_bounds(out.width as usize, out.height as usize, &out.rgba) {
+        let bounds = match dense {
+            Some(frac) => dense_ink_bounds(out.width as usize, out.height as usize, &out.rgba, frac),
+            None => ink_bounds(out.width as usize, out.height as usize, &out.rgba),
+        };
+        match bounds {
             Some([u0, v0, u1, v1]) => {
                 // View space → the rotated view on screen.
                 let rotate = |u: f32, v: f32| match rot {
@@ -287,6 +298,35 @@ pub(crate) fn ink_bounds(w: usize, h: usize, rgba: &[u8]) -> Option<[f32; 4]> {
     (x1 > x0 && y1 > y0).then(|| [x0 as f32 / w as f32, y0 as f32 / h as f32, x1 as f32 / w as f32, y1 as f32 / h as f32])
 }
 
+/// Like [`ink_bounds`], but a column (row) counts only with at least `frac` of the page's
+/// height (width) inked: a staff crosses many columns, a speck of dust one or two.
+pub(crate) fn dense_ink_bounds(w: usize, h: usize, rgba: &[u8], frac: f32) -> Option<[f32; 4]> {
+    if w == 0 || h == 0 || rgba.len() < w * h * 4 {
+        return None;
+    }
+    let ink = |p: &[u8; 4]| p[3] > 16 && (p[0] < 240 || p[1] < 240 || p[2] < 240);
+    let (mut cols, mut rows) = (vec![0u32; w], vec![0u32; h]);
+    for (y, row) in rgba.chunks_exact(w * 4).take(h).enumerate() {
+        for (x, p) in row.as_chunks::<4>().0.iter().enumerate() {
+            if ink(p) {
+                if let Some(c) = cols.get_mut(x) {
+                    *c += 1;
+                }
+                if let Some(r) = rows.get_mut(y) {
+                    *r += 1;
+                }
+            }
+        }
+    }
+    let need = |n: usize| ((n as f32 * frac).ceil() as u32).max(1);
+    let (cn, rn) = (need(h), need(w));
+    let x0 = cols.iter().position(|&c| c >= cn)?;
+    let x1 = cols.iter().rposition(|&c| c >= cn)? + 1;
+    let y0 = rows.iter().position(|&r| r >= rn)?;
+    let y1 = rows.iter().rposition(|&r| r >= rn)? + 1;
+    Some([x0 as f32 / w as f32, y0 as f32 / h as f32, x1 as f32 / w as f32, y1 as f32 / h as f32])
+}
+
 #[cfg(test)]
 mod tests {
     use super::{SNAPSHOT_MAX_SIDE, SNAPSHOT_MIN_SCALE, snapshot_scale};
@@ -329,5 +369,15 @@ mod tests {
         }
         assert_eq!(super::ink_bounds(w, h, &px), Some([0.2, 0.25, 0.8, 0.8]));
         assert_eq!(super::ink_bounds(w, h, &vec![255u8; w * h * 4]), None);
+        // A staff line across the middle rows and a speck at the edge: the speck doesn't count.
+        let mut px = vec![255u8; w * h * 4];
+        for y in 8..12 {
+            for x in 2..8 {
+                px[(y * w + x) * 4] = 0;
+            }
+        }
+        px[(1 * w + 9) * 4] = 0;
+        assert_eq!(super::ink_bounds(w, h, &px), Some([0.2, 0.05, 1.0, 0.6]));
+        assert_eq!(super::dense_ink_bounds(w, h, &px, 0.1), Some([0.2, 0.4, 0.8, 0.6]));
     }
 }

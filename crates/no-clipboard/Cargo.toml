@@ -1,0 +1,10 @@
+[package]
+name = "pdfcraft-no-clipboard"
+description = "The slice of arboard's API PdfCraft uses, for platforms arboard doesn't support (Android): the system clipboard is unavailable"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true

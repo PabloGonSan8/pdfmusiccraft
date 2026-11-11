@@ -4302,6 +4302,18 @@ evidence = ["crates/annot/src/tests.rs::stamps_draw_their_label_and_by_line", "c
 notes = "Approved, Confidential, Received, Reviewed, Revised with a By author at time, date line (local time). The label is turned with the page's /Rotate so it reads upright as displayed (#1398). A custom stamp (image or PDF page) can carry a line under its picture, a template with {name}, {date} and {time} filled in when it is placed and fixed afterwards (#1741; Create Custom Stamp, and stamp_custom's line). Not yet: Acrobat's dynamic stamps from PDF stamp files with form fields and JavaScript, date formats other than the built-in one, and text outside WinAnsi in the line (drawn in Helvetica, so it shows as ?)"
 
 [[feature]]
+id = "comment.music-marks"
+title = "Music marks (dynamics, hairpins, articulations)"
+area = "E"
+tier = "P3"
+milestone = "M5"
+status = "shipped"
+commands = ["comment.stamp"]
+tools = ["comment_add"]
+evidence = ["crates/annot/src/tests.rs::music_marks_draw_their_words_and_signs", "crates/automation/tests/it/automation.rs::music_marks_through_tools"]
+notes = "Not an Acrobat feature: a Music section in the stamp palette for annotating scores. Dynamics (ppp to fff, sfz, fp) and Ped. in standard Times Bold Italic, tempo and dynamic words (cresc., dim., rit., accel., a tempo) in Times Italic (standard-14, never embedded); crescendo and diminuendo hairpins, accent, staccato, tenuto, marcato, fermata, breath mark, caesura, up and down bow, pedal release and the 'watch' glasses drawn as PdfCraft's own vector paths that scale with the stamp's box, so a hairpin is stretched to its passage by resizing. Slurs and ties above or below as engraved crescents stretched with the box; fingering 1 to 5 and boxed rehearsal letters A to H in Times Bold. Pencil grey by default; colour and opacity as any stamp. Not yet: rehearsal letters past H or numbers, slurs that bend other than horizontally, a dedicated palette outside Stamps"
+
+[[feature]]
 id = "comment.stamps-custom"
 title = "Custom stamps from images or PDF pages"
 area = "E"

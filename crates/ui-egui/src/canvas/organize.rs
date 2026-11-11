@@ -221,7 +221,11 @@ fn apply_auto_scroll(ui: &mut egui::Ui, middle_gesture: bool, auto_delta: Vec2) 
 }
 
 /// Drag pages to move them (the selection, or the page grabbed); `drop` is set when the drag ends.
-fn drag_pages(view: &mut DocView, resp: &egui::Response, page: usize, drop: &mut bool) {
+fn drag_pages(ui: &egui::Ui, view: &mut DocView, resp: &egui::Response, page: usize, drop: &mut bool) {
+    // With a finger, a quick drag scrolls; resting on the page first moves it.
+    if crate::touch::drag_scrolls(ui, resp) {
+        return;
+    }
     if resp.drag_started() {
         if !view.selected.contains(&page) {
             view.selected = [page].into();
@@ -328,7 +332,7 @@ pub(super) fn organize_grid(
                 if let Some((_, above)) = anchor.filter(|(page, _)| *page == i) {
                     ui.scroll_to_rect_animation(c.translate(vec2(0.0, -above)), Some(egui::Align::Min), egui::style::ScrollAnimation::none());
                 }
-                drag_pages(view, &resp, i, &mut drop);
+                drag_pages(ui, view, &resp, i, &mut drop);
                 let page_label = crate::i18n::fmt(tl!("Page {label}"), &[("label", &p.label)]);
                 resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, view.selected.contains(&i), page_label.clone()));
                 let pr = grid_page_rect(c, vec2(p.width, p.height));

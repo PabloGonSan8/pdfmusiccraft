@@ -356,17 +356,31 @@ impl Automation {
                     Shape::Note { at: icon_anchor(&info, x, y), icon }
                 }
                 "stamp" => {
-                    let want = a.opt_str("stamp")?.unwrap_or("approved").to_ascii_lowercase().replace([' ', '-', '_'], "");
+                    let want = a.opt_str("stamp")?.unwrap_or("approved").to_ascii_lowercase().replace([' ', '-', '_', '.'], "");
                     let dynamic = a.opt_bool("dynamic")?.unwrap_or(false);
                     let stamp = StampKind::ALL
                         .into_iter()
-                        .find(|k| k.label().to_ascii_lowercase().replace(' ', "") == want && ((k.group() == StampGroup::Dynamic) == dynamic))
+                        .find(|k| {
+                            // A music mark also answers to its name ("rehearsal f", "finger 1"): its
+                            // label alone can be another mark's ("F" is forte's too).
+                            let named = k.group() == StampGroup::Music && k.name().trim_start_matches("PCMusic").eq_ignore_ascii_case(&want);
+                            (named || k.label().to_ascii_lowercase().replace([' ', '.'], "") == want)
+                                && ((k.group() == StampGroup::Dynamic) == dynamic)
+                        })
                         .ok_or_else(|| ToolError::InvalidArgs(format!("unknown stamp {want:?} (see the tool description)")))?;
                     let (w, h) = stamp.size();
                     let [x, y] = a.need::<2>("at", "a stamp (its centre)")?;
                     let rect = rect_to_user(&info, [x - w / 2.0, y - h / 2.0, x + w / 2.0, y + h / 2.0]);
                     let author = a.opt_str("author")?.unwrap_or(DEFAULT_AUTHOR).to_string();
-                    let by = dynamic.then(|| self.session.stamp_by_line(&author));
+                    let by = if stamp == StampKind::Number {
+                        // A number mark carries its number: `text`, 1 by default.
+                        Some(a.opt_str("text")?.map(str::trim).filter(|t| !t.is_empty()).unwrap_or("1").to_string())
+                    } else if stamp.is_metronome() {
+                        // A metronome mark carries its beats per minute: `text`, 120 by default.
+                        Some(a.opt_str("text")?.map(str::trim).filter(|t| !t.is_empty()).unwrap_or("120").to_string())
+                    } else {
+                        dynamic.then(|| self.session.stamp_by_line(&author))
+                    };
                     Shape::Stamp { rect, stamp, by }
                 }
                 "rectangle" => Shape::Rectangle { rect: rect_to_user(&info, a.need::<4>("rect", "a rectangle")?) },

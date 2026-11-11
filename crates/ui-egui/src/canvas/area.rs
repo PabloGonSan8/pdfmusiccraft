@@ -255,7 +255,8 @@ pub(super) fn set_layers(app: &mut PdfCraftApp, index: usize, changes: &[(LayerO
 /// page input: it is read before the pages' widget exists, once `rect_contains_pointer` has found
 /// the view under the pointer.
 pub(super) fn zoom_anchor(ui: &egui::Ui) -> Option<Pos2> {
-    ui.input(|i| i.pointer.hover_pos())
+    // A pinch zooms about the point between the fingers, not wherever the first one is.
+    ui.input(|i| i.multi_touch().map(|t| t.center_pos).or(i.pointer.hover_pos()))
 }
 
 /// The pointer and frame time that scroll the view while a comment is drawn. Not page input: it is
