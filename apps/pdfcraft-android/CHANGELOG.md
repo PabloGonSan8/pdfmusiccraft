@@ -3,7 +3,7 @@
 PdfMusicCraft's versions, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/). Downloads are on the
-[Releases](https://github.com/PabloGonSan8/pdfcraft/releases) page.
+[Releases](https://github.com/PabloGonSan8/pdfmusiccraft/releases) page.
 
 ## [1.0.1]
 

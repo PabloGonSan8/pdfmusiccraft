@@ -6,7 +6,7 @@ PdfMusicCraft es una app para leer y anotar partituras en PDF en tabletas y móv
 No está en Google Play: se instala con el archivo `.apk` que se publica en la página de
 **Releases** del proyecto:
 
-**https://github.com/PabloGonSan8/pdfcraft/releases**
+**https://github.com/PabloGonSan8/pdfmusiccraft/releases**
 
 ## Qué necesitas
 
@@ -16,7 +16,7 @@ No está en Google Play: se instala con el archivo `.apk` que se publica en la p
 
 ## Instalar desde el móvil o la tableta
 
-1. Abre la página de [Releases](https://github.com/PabloGonSan8/pdfcraft/releases) en el
+1. Abre la página de [Releases](https://github.com/PabloGonSan8/pdfmusiccraft/releases) en el
    navegador del dispositivo.
 2. En la versión más reciente (arriba del todo), despliega **Assets** y toca el archivo
    `PdfMusicCraft-….apk` para descargarlo.
@@ -43,7 +43,7 @@ Cada carpeta con varios PDF aparece como un **concierto**.
 
 ### Opción A: copiar el archivo
 
-1. Descarga el `.apk` desde [Releases](https://github.com/PabloGonSan8/pdfcraft/releases) en el
+1. Descarga el `.apk` desde [Releases](https://github.com/PabloGonSan8/pdfmusiccraft/releases) en el
    ordenador.
 2. Conecta el dispositivo por USB y elige **Transferencia de archivos** en la notificación del
    dispositivo.
@@ -63,7 +63,7 @@ adb install -r PdfMusicCraft-….apk
 
 ## Actualizar
 
-Cada versión nueva se publica en [Releases](https://github.com/PabloGonSan8/pdfcraft/releases).
+Cada versión nueva se publica en [Releases](https://github.com/PabloGonSan8/pdfmusiccraft/releases).
 Para actualizar, descarga el `.apk` nuevo e instálalo **encima** del que tienes, igual que la
 primera vez, **sin desinstalar**. Tus partituras, marcas y ajustes se conservan.
 
@@ -79,13 +79,13 @@ proyectos de GitHub y te avisa (e instala) cuando sale una versión nueva.
    [Releases](https://github.com/ImranR98/Obtainium/releases) o desde
    [F-Droid](https://f-droid.org/packages/dev.imranr.obtainium.fdroid/).
 2. Toca **Añadir app** y pega esta dirección:
-   `https://github.com/PabloGonSan8/pdfcraft`
+   `https://github.com/PabloGonSan8/pdfmusiccraft`
 3. Toca **Añadir**. A partir de ahí Obtainium te avisará de cada versión nueva.
 
 ## Informar de un fallo o pedir algo
 
 Abre una incidencia en la pestaña
-**[Issues](https://github.com/PabloGonSan8/pdfcraft/issues)** del proyecto (necesitas una cuenta
+**[Issues](https://github.com/PabloGonSan8/pdfmusiccraft/issues)** del proyecto (necesitas una cuenta
 gratuita de GitHub). Para que se pueda arreglar rápido, cuenta:
 
 - qué versión tienes (el número aparece en el nombre del `.apk` que instalaste);

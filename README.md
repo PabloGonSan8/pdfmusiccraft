@@ -10,13 +10,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/PabloGonSan8/pdfcraft/releases/latest"><b>⬇ Download / Descargar</b></a>
+  <a href="https://github.com/PabloGonSan8/pdfmusiccraft/releases/latest"><b>⬇ Download / Descargar</b></a>
   ·
   <a href="apps/pdfcraft-android/INSTALL.md">How to install</a>
   ·
   <a href="apps/pdfcraft-android/INSTALL.es.md">Cómo instalar</a>
   ·
-  <a href="https://github.com/PabloGonSan8/pdfcraft/issues">Report a bug / Informar de un fallo</a>
+  <a href="https://github.com/PabloGonSan8/pdfmusiccraft/issues">Report a bug / Informar de un fallo</a>
 </p>
 
 <p align="center">
@@ -32,14 +32,14 @@ PdfMusicCraft is a fork of **[PdfCraft](https://github.com/storytold/pdfcraft)**
 editor written in Rust by the ArtCraft team. It keeps PdfCraft's engine and adds a touch
 interface for musicians on Android. It is an independent adaptation: it isn't made, endorsed or
 supported by the PdfCraft or ArtCraft teams, so please report problems with this app
-[here](https://github.com/PabloGonSan8/pdfcraft/issues), not upstream.
+[here](https://github.com/PabloGonSan8/pdfmusiccraft/issues), not upstream.
 
 PdfMusicCraft es un fork de **[PdfCraft](https://github.com/storytold/pdfcraft)**
 ([storytold/pdfcraft](https://github.com/storytold/pdfcraft)), un lector y editor de PDF de
 código abierto escrito en Rust por el equipo de ArtCraft. Usa el motor de PdfCraft y le añade una
 interfaz táctil para músicos en Android. Es una adaptación independiente: ni el equipo de
 PdfCraft ni el de ArtCraft la hacen, respaldan o mantienen, así que los fallos de esta app se
-cuentan [aquí](https://github.com/PabloGonSan8/pdfcraft/issues), no en el proyecto original.
+cuentan [aquí](https://github.com/PabloGonSan8/pdfmusiccraft/issues), no en el proyecto original.
 
 ## What it does
 
