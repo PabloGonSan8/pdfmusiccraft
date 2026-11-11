@@ -5,7 +5,7 @@ PdfMusicCraft's versions, newest first. The format follows
 [Semantic Versioning](https://semver.org/). Downloads are on the
 [Releases](https://github.com/PabloGonSan8/pdfcraft/releases) page.
 
-## [1.0.0] - unreleased
+## [1.0.0] 
 
 The first public version.
 
