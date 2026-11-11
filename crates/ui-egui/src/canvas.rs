@@ -618,7 +618,7 @@ pub struct DocView {
     /// Page sizes (width, height) in points (view space), for mapping text positions to scroll offsets.
     page_sizes: Vec<(f32, f32)>,
     /// Screen rects of the pages drawn last frame (hit-testing, tests, automation).
-    screen_rects: Vec<(usize, Rect)>,
+    pub(crate) screen_rects: Vec<(usize, Rect)>,
     screen_xforms: Vec<(usize, PageXform)>,
     /// Pixels per point last frame, for telling a rounding sliver of a page from a visible one.
     screen_ppp: f32,
@@ -2703,6 +2703,8 @@ fn page_scroll_area(ui: &egui::Ui, view: &mut DocView, geometry: &ScrollGeometry
         } else {
             ui.input(|i| i.pointer.delta())
         };
+        // With the touch interface and the score fitted, one finger moves along one axis.
+        let moved = crate::touch::lock_axis(ui, id, moved, view.zoom);
         if moved != Vec2::ZERO {
             view.end_find_following();
         }
@@ -3307,6 +3309,8 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     let row = shown_row(view, &rects);
     let visible_pages: Vec<usize> = if view.continuous { (0..rects.len()).collect() } else { row.clone() };
     let (y_shift, content_h) = vertical_placement(view.continuous, &rects, &visible_pages, avail.height(), ui.ctx().pixels_per_point());
+    // Room below the last page for what the touch interface lays over the bottom (its music sheet).
+    let content_h = content_h + crate::touch::bottom_room();
 
     let mut scroll = page_scroll_area(
         ui,

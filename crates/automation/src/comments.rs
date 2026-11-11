@@ -375,6 +375,9 @@ impl Automation {
                     let by = if stamp == StampKind::Number {
                         // A number mark carries its number: `text`, 1 by default.
                         Some(a.opt_str("text")?.map(str::trim).filter(|t| !t.is_empty()).unwrap_or("1").to_string())
+                    } else if stamp.is_metronome() {
+                        // A metronome mark carries its beats per minute: `text`, 120 by default.
+                        Some(a.opt_str("text")?.map(str::trim).filter(|t| !t.is_empty()).unwrap_or("120").to_string())
                     } else {
                         dynamic.then(|| self.session.stamp_by_line(&author))
                     };

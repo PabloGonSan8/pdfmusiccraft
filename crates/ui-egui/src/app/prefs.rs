@@ -172,6 +172,8 @@ impl PdfCraftApp {
         // Set apart: one more key inside the macro above passes serde_json's recursion limit.
         v["default_page_gaps"] = serde_json::Value::Bool(self.view_defaults.show_page_gaps);
         v["recent_limit"] = serde_json::json!(self.recent_limit);
+        // The scores the touch start screen leaves out.
+        v["touch_hidden"] = serde_json::json!(self.touch.hidden);
         v["fill_text_color"] = serde_json::json!(self.fill_text_color);
         v["redact_prefs"] = self.redact_defaults.to_json();
         v["pinned_tools"] = serde_json::json!(self.pinned_tools);
@@ -242,6 +244,9 @@ impl PdfCraftApp {
             self.recent_limit = usize::try_from(limit).map_or(crate::RECENT_FILES_MAX, |n| n.min(crate::RECENT_FILES_MAX));
         }
         self.recent.truncate(self.recent_limit);
+        if let Ok(hidden) = serde_json::from_value::<Vec<std::path::PathBuf>>(v["touch_hidden"].clone()) {
+            self.touch.hidden = hidden;
+        }
         self.restore_layout_prefs(&v);
         self.restore_behavior_prefs(&v);
         self.restore_view_prefs(&v);

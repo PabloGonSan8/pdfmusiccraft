@@ -72,11 +72,8 @@ pub fn tab_strip(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     app.active = None;
                     app.combine_tab.focused = false;
                 }
-                // Reserve the three icon buttons, Discord and their gaps outside the scrolling tabs.
-                let controls_width = ui.fonts_mut(|f| f.layout_no_wrap("Discord".into(), theme::medium(13.0), t.text).size().x)
-                    + 3.0 * button
-                    + 54.0
-                    + window_controls::width(&controls.right);
+                // Reserve the three icon buttons and their gaps outside the scrolling tabs.
+                let controls_width = 3.0 * button + 54.0 + window_controls::width(&controls.right);
                 // Open stays in sight after the tabs: its icon, text and padding, and the gaps around it.
                 let open_width = ui.fonts_mut(|f| f.layout_no_wrap(tl!("Open").into(), theme::medium(13.0), t.text).size().x) + 38.0 + 12.0;
                 let mut tabs_width = (ui.available_width() - controls_width - open_width).max(0.0);
@@ -275,10 +272,7 @@ pub fn tab_strip(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     if icons::button(ui, "circle-help", button, false, tl!("Keyboard shortcuts")).clicked() {
                         app.dialog = Some(Dialog::Shortcuts);
                     }
-                    // One click to the community, from anywhere in the app.
-                    if widgets::ghost_button_sized(ui, "messages-square", "Discord", tab_h).on_hover_text(pdfcraft_engine::links::DISCORD).clicked() {
-                        app.execute("help.discord");
-                    }
+                    // ponytail: this fork drops the title bar's Discord button (Help ▸ Discord stays).
                 });
             });
         });
@@ -298,6 +292,11 @@ fn tab_menu(app: &PdfCraftApp, ui: &mut egui::Ui, index: usize, action: &mut Opt
     let (tab, id) = (view.view_key(), view.id);
     if ui.button(tl!("Close Tab")).clicked() {
         *action = Some(Action::Close(tab));
+        ui.close();
+    }
+    // Also reached with a long press on a tab (fingers have no right button).
+    if ui.add_enabled(app.views.len() > 1, egui::Button::new(crate::music_ui::es("Close all", "Cerrar todas"))).clicked() {
+        *action = Some(Action::CloseAll);
         ui.close();
     }
     if ui.add_enabled(!app.closed_tabs.is_empty(), egui::Button::new(tl!("Reopen Closed Tab"))).clicked() {

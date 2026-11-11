@@ -18,16 +18,19 @@ const STILL: f64 = 0.05;
 /// The glide slows by `e` every this many seconds; it travels the lift speed times this.
 const TAU: f32 = 0.35;
 /// The same for a finger flicking the page on a touch screen, which glides further, as phones'
-/// lists do.
-const TOUCH_TAU: f32 = 0.9;
+/// lists do (about iOS's normal deceleration; 0.9 felt floaty on a score).
+const TOUCH_TAU: f32 = 0.55;
 /// Below this speed (points per second) a lift doesn't glide, and a glide stops.
 const START_SPEED: f32 = 150.0;
 const STOP_SPEED: f32 = 10.0;
 /// Fastest glide, in points per second: a flick the system measured over a hiccup can't throw
 /// the document to its end.
 const MAX_SPEED: f32 = 8000.0;
-/// A pass this long after the last one (the view was hidden, the app stalled) ends a glide.
-const STALE: f64 = 0.1;
+/// A pass this long after the last one (the view was hidden) ends a glide.
+const STALE: f64 = 0.5;
+/// The longest step a glide takes at once: a pass that came late (a page's picture arriving)
+/// moves it as far as this would, rather than stopping it dead or throwing it.
+const MAX_STEP: f64 = 0.1;
 
 pub(crate) struct Fling {
     /// Whether a lift glides on this platform (see the module docs).
@@ -153,6 +156,7 @@ impl Fling {
             return Vec2::ZERO;
         }
         self.at = now;
+        let dt = dt.min(MAX_STEP);
         let decay = (-(dt as f32) / self.tau).exp();
         let moved = self.velocity * self.tau * (1.0 - decay);
         self.velocity *= decay;

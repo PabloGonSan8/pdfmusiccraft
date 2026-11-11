@@ -29,9 +29,48 @@ pub(crate) fn on() -> bool {
 }
 
 /// Note whether the touch interface is on, for widgets that don't see the app.
-fn note_touch(app: &PdfCraftApp) {
+fn note_touch(app: &PdfCraftApp, ctx: &egui::Context) {
     TOUCH.store(app.touch.enabled, std::sync::atomic::Ordering::Relaxed);
     crate::comments::set_finger_handles(app.touch.enabled);
+    if app.touch.enabled && ctx.options(|o| o.input_options.max_click_dist) < FINGER_CLICK_DIST {
+        // A fingertip wobbles: a tap that moved a little is still a tap (it deselects, places a
+        // mark), not the start of a drag.
+        ctx.options_mut(|o| o.input_options.max_click_dist = FINGER_CLICK_DIST);
+    }
+}
+
+/// How far (points) a finger may move during a tap.
+/// (A drag starts only past it, and then catches up all at once: more makes each drag begin
+/// with a visible jump.)
+const FINGER_CLICK_DIST: f32 = 10.0;
+
+/// How much room (points, as f32 bits) the music sheet covers at the bottom of the screen: the
+/// pages scroll that much further, so the end of the last page can come up above it.
+static BOTTOM_ROOM: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// The room the pages leave below the last one for the music sheet (0 without it).
+pub(crate) fn bottom_room() -> f32 {
+    f32::from_bits(BOTTOM_ROOM.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+fn set_bottom_room(points: f32) {
+    BOTTOM_ROOM.store(points.max(0.0).to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Two fingers always move and zoom the page, whatever tool is chosen: while they're down the
+/// tool is put aside for the Hand, and comes back once every finger has lifted.
+fn two_fingers_pan(app: &mut PdfCraftApp, ctx: &egui::Context) {
+    let (fingers, down) = ctx.input(|i| (i.multi_touch().is_some(), i.pointer.any_down()));
+    if fingers && app.quick_tool != QuickTool::Hand && app.touch.before_fingers.is_none() {
+        app.touch.before_fingers = Some(app.quick_tool);
+        app.quick_tool = QuickTool::Hand;
+        // Whatever the first finger began (a selection, a stroke) ends here.
+        if let Some(view) = app.active.and_then(|i| app.views.get_mut(i)) {
+            view.comments.gesture = None;
+        }
+    } else if !fingers && !down && let Some(tool) = app.touch.before_fingers.take() {
+        app.quick_tool = tool;
+    }
 }
 
 /// With the touch interface, whether the drag on page thumbnail `resp` scrolls the list (a quick
@@ -91,8 +130,21 @@ pub struct Touch {
     swipe_from: Option<egui::Pos2>,
     /// The document last fitted to the screen.
     fitted: Option<pdfcraft_engine::DocId>,
+    /// The document being fitted (its pages laid out at the page's width first).
+    fitting: Option<pdfcraft_engine::DocId>,
+    /// The zoom that fits the music to the screen's width: at it or below, a sideways swipe turns
+    /// the page (zoomed in further, it pans).
+    fit_zoom: Option<f32>,
     /// The folder the file browser showed last.
     pub last_dir: Option<PathBuf>,
+    /// The tool put aside while two fingers move the page ([`two_fingers_pan`]).
+    before_fingers: Option<QuickTool>,
+    /// The scores taken off the start screen (they stay on disk); saved with the settings.
+    pub hidden: Vec<PathBuf>,
+    /// The start screen is choosing scores (to take them off it): the ones chosen.
+    choosing: Option<std::collections::BTreeSet<PathBuf>>,
+    /// Where the editor's "Music view" button was dragged to, from its usual place.
+    music_button: egui::Vec2,
     /// The file browser, while it's open (Android).
     #[cfg(target_os = "android")]
     pub(crate) browser: Option<Browser>,
@@ -137,6 +189,19 @@ fn tile(ui: &mut egui::Ui, icon: &str, text: &str, on: bool) -> egui::Response {
     resp
 }
 
+/// A tile on its own card, for the start screen's buttons; in a wrapping row it starts a new
+/// row when it doesn't fit (egui places a frame before knowing its size, so it can't wrap one,
+/// and an overflowing row widened the whole start screen past the screen). Whether it was tapped.
+fn card_tile(ui: &mut egui::Ui, icon: &str, text: &str) -> bool {
+    let w = ui.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), egui::FontId::proportional(13.0), Color32::WHITE).size().x).max(40.0) + 20.0;
+    // The tile, the card's margins and stroke, and the gap after it.
+    let need = w + 2.0 * 10.0 + 2.0 + ui.spacing().item_spacing.x;
+    if ui.available_size_before_wrap().x < need && ui.cursor().min.x > ui.max_rect().min.x + 1.0 {
+        ui.end_row();
+    }
+    card(ui).show(ui, |ui| tile(ui, icon, text, false)).inner.clicked()
+}
+
 /// The floating card the bar and the music sheet sit on.
 fn card(ui: &egui::Ui) -> egui::Frame {
     let t = crate::theme::Tokens::get(ui.ctx());
@@ -156,8 +221,9 @@ pub(crate) fn owns_window(app: &PdfCraftApp) -> bool {
 
 /// The start screen or the music view, whichever shows.
 pub(crate) fn frame(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
-    note_touch(app);
+    note_touch(app, ui.ctx());
     if app.touch.home || app.active.is_none() {
+        set_bottom_room(0.0);
         home(app, ui);
     } else {
         app.touch.shelf = None;
@@ -175,41 +241,74 @@ fn home(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
     let t = crate::theme::Tokens::get(ui.ctx());
     let mut concert: Option<PathBuf> = None;
     let mut open: Option<PathBuf> = None;
+    let mut toggle: Option<PathBuf> = None;
     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.pasteboard).inner_margin(egui::Margin::symmetric(28, 24))).show(ui, |ui| {
+        // The title, then the buttons in as many rows as they need: in one row with the title
+        // they grew wider than the screen once a score was open, pushing the list off its left.
         ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.label(RichText::new(es("Scores", "Partituras")).size(32.0).strong().color(t.text));
-                let n = app.touch.shelf.as_ref().map_or(0, Vec::len);
-                ui.label(RichText::new(format!("{n} PDF")).size(15.0).color(t.text_muted));
-            });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
-                if app.active.is_some() && card(ui).show(ui, |ui| tile(ui, "book-open", es("Back", "Volver"), false)).inner.clicked() {
-                    app.touch.home = false;
-                    app.touch.focus = true;
+            ui.label(RichText::new(es("Scores", "Partituras")).size(32.0).strong().color(t.text));
+            let n = app.touch.shelf.as_ref().map_or(0, Vec::len);
+            ui.label(RichText::new(format!("{n} PDF")).size(15.0).color(t.text_muted));
+        });
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+            if let Some(chosen) = &app.touch.choosing {
+                // Choosing scores: take them off the start screen, choose them all, or stop.
+                let n = chosen.len();
+                if card_tile(ui, "list-checks", es("All", "Todas")) {
+                    let all: std::collections::BTreeSet<PathBuf> = app.touch.shelf.iter().flatten().cloned().collect();
+                    app.touch.choosing = Some(all);
                 }
-                if card(ui).show(ui, |ui| tile(ui, "folder-open", es("Open from…", "Abrir desde…"), false)).inner.clicked() {
-                    app.touch.home = false;
-                    app.run_command("file.open");
+                let remove = format!("{} ({n})", es("Remove from list", "Quitar de la lista"));
+                if n > 0 && card_tile(ui, "eye-off", &remove) {
+                    hide_chosen(app);
                 }
-                if card(ui).show(ui, |ui| tile(ui, "folder", es("Open folder…", "Abrir carpeta…"), false)).inner.clicked() {
-                    app.ask(crate::pickers::Ask::Folder(rfd::AsyncFileDialog::new()), None, |app, paths| {
-                        if let Some(dir) = paths.first() {
-                            open_concert(app, dir);
-                        }
-                    });
+                if card_tile(ui, "x", es("Cancel", "Cancelar")) {
+                    app.touch.choosing = None;
                 }
-                if card(ui).show(ui, |ui| tile(ui, "rotate-cw", es("Refresh", "Actualizar"), false)).inner.clicked() {
-                    app.touch.shelf = None;
-                }
-            });
+                return;
+            }
+            if app.active.is_some() && card_tile(ui, "book-open", es("Back", "Volver")) {
+                app.touch.home = false;
+                app.touch.focus = true;
+            }
+            if !app.views.is_empty() && card_tile(ui, "circle-x", es("Close all", "Cerrar todas")) {
+                close_all(app);
+            }
+            if card_tile(ui, "folder-open", es("Open from…", "Abrir desde…")) {
+                app.touch.home = false;
+                app.run_command("file.open");
+            }
+            if card_tile(ui, "folder", es("Open folder…", "Abrir carpeta…")) {
+                app.ask(crate::pickers::Ask::Folder(rfd::AsyncFileDialog::new()), None, |app, paths| {
+                    if let Some(dir) = paths.first() {
+                        open_concert(app, dir);
+                    }
+                });
+            }
+            if card_tile(ui, "rotate-cw", es("Refresh", "Actualizar")) {
+                app.touch.shelf = None;
+            }
+            if app.touch.shelf.as_ref().is_some_and(|s| !s.is_empty())
+                && card_tile(ui, "list-checks", es("Choose", "Elegir"))
+            {
+                app.touch.choosing = Some(std::collections::BTreeSet::new());
+            }
+            if !app.touch.hidden.is_empty() && card_tile(ui, "eye", es("Show hidden", "Mostrar ocultas")) {
+                app.touch.hidden.clear();
+                app.touch.shelf = None;
+            }
         });
         ui.add_space(14.0);
         // Search by name.
         card(ui).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                crate::icons::paint(ui, egui::Rect::from_min_size(ui.cursor().min + vec2(4.0, 10.0), vec2(20.0, 20.0)), "search", 20.0, t.icon);
-                ui.add_space(32.0);
+            // A row as tall as the field, so the magnifier sits level with its text (a plain
+            // `horizontal` row starts short and centres the icon on that).
+            ui.allocate_ui_with_layout(vec2(ui.available_width(), 44.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.add_space(4.0);
+                ui.add(crate::icons::image("search", 20.0, t.icon));
+                ui.add_space(8.0);
                 ui.add(
                     egui::TextEdit::singleline(&mut app.touch.search)
                         .hint_text(es("Search scores", "Buscar partituras"))
@@ -256,7 +355,8 @@ fn home(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
         // Cards in as many columns as fit.
         const CARD_W: f32 = 250.0;
         const GAP: f32 = 14.0;
-        let width = ui.available_width();
+        // Less the scroll bar's room, so a long list's bar never pushes the last column out.
+        let width = ui.available_width() - ui.spacing().scroll.allocated_width() - 2.0;
         let cols = ((width + GAP) / (CARD_W + GAP)).floor().max(1.0);
         let card_w = (width - GAP * (cols - 1.0)) / cols;
         let concerts: Vec<&(PathBuf, usize)> = app
@@ -275,7 +375,7 @@ fn home(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                         for (dir, n) in row {
                             let title = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                             let sub = format!("{n} {}", es("scores", "partituras"));
-                            if score_card(ui, "folder-open", &title, &sub, card_w).clicked() {
+                            if score_card(ui, "folder-open", &title, &sub, card_w, None).clicked() && app.touch.choosing.is_none() {
                                 concert = Some(dir.clone());
                             }
                         }
@@ -292,7 +392,13 @@ fn home(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     for path in row {
                         let title = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                         let folder = path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                        if score_card(ui, "file-text", &title, &folder, card_w).clicked() {
+                        let chosen = app.touch.choosing.as_ref().map(|c| c.contains(*path));
+                        let resp = score_card(ui, "file-text", &title, &folder, card_w, chosen);
+                        // A long press starts choosing with this score; while choosing a tap
+                        // chooses or unchooses.
+                        if resp.long_touched() || (chosen.is_some() && resp.clicked()) {
+                            toggle = Some((*path).clone());
+                        } else if resp.clicked() {
                             open = Some((*path).clone());
                         }
                     }
@@ -301,6 +407,12 @@ fn home(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
             }
         });
     });
+    if let Some(path) = toggle {
+        let chosen = app.touch.choosing.get_or_insert_with(Default::default);
+        if !chosen.remove(&path) {
+            chosen.insert(path);
+        }
+    }
     if let Some(path) = open {
         app.touch.home = false;
         app.touch.focus = true;
@@ -398,7 +510,8 @@ fn go_to_piece(app: &mut PdfCraftApp, at: usize) {
 }
 
 /// A card on the start screen: an icon, a title (two lines at most) and a line under it.
-fn score_card(ui: &mut egui::Ui, icon_name: &str, name: &str, under: &str, width: f32) -> egui::Response {
+/// `chosen` is whether it's chosen, while the start screen is choosing scores.
+fn score_card(ui: &mut egui::Ui, icon_name: &str, name: &str, under: &str, width: f32, chosen: Option<bool>) -> egui::Response {
     let t = crate::theme::Tokens::get(ui.ctx());
     let (rect, resp) = ui.allocate_exact_size(vec2(width, 96.0), egui::Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
@@ -421,9 +534,35 @@ fn score_card(ui: &mut egui::Ui, icon_name: &str, name: &str, under: &str, width
         galley
     };
     ui.painter().galley(egui::pos2(left, rect.top() + 20.0), galley, t.text);
-    let folder_text = ui.painter().layout(under.to_owned(), egui::FontId::proportional(13.5), t.text_muted, text_w);
+    // One line, cut with an ellipsis: a long folder name wrapped out of the card.
+    let mut job = egui::text::LayoutJob::simple_singleline(under.to_owned(), egui::FontId::proportional(13.5), t.text_muted);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(text_w);
+    let folder_text = ui.painter().layout_job(job);
     ui.painter().galley(egui::pos2(left, rect.bottom() - 30.0), folder_text, t.text_muted);
+    if let Some(on) = chosen {
+        // A tick in a circle at the top right: filled when chosen.
+        let at = rect.right_top() + vec2(-20.0, 20.0);
+        if on {
+            ui.painter().rect_stroke(rect, 16.0, egui::Stroke::new(3.0, t.accent_text), egui::StrokeKind::Inside);
+            ui.painter().circle_filled(at, 12.0, t.accent_text);
+            crate::icons::paint(ui, egui::Rect::from_center_size(at, vec2(16.0, 16.0)), "check", 16.0, Color32::WHITE);
+        } else {
+            ui.painter().circle_stroke(at, 12.0, egui::Stroke::new(2.0, t.text_muted));
+        }
+    }
     resp
+}
+
+/// Take the chosen scores off the start screen (and out of the recent files); the files stay.
+fn hide_chosen(app: &mut PdfCraftApp) {
+    let Some(chosen) = app.touch.choosing.take() else { return };
+    app.recent.retain(|r| !chosen.contains(std::path::Path::new(&r.path)));
+    for p in chosen {
+        if !app.touch.hidden.contains(&p) {
+            app.touch.hidden.push(p);
+        }
+    }
+    app.touch.shelf = None;
 }
 
 /// The PDFs the start screen lists: the recent files first, then each library folder's PDFs by
@@ -439,7 +578,7 @@ fn shelf(app: &PdfCraftApp) -> Vec<PathBuf> {
         out.extend(found);
     }
     let mut seen = std::collections::HashSet::new();
-    out.retain(|p| seen.insert(p.clone()));
+    out.retain(|p| !app.touch.hidden.contains(p) && seen.insert(p.clone()));
     out.truncate(MAX_SHELF);
     out
 }
@@ -447,12 +586,38 @@ fn shelf(app: &PdfCraftApp) -> Vec<PathBuf> {
 /// The music view: the document alone, the bar and the music sheet over it.
 fn focus_frame(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
-    // A document shown here for the first time fills the screen with its page.
-    if let Some(view) = app.active.and_then(|i| app.views.get_mut(i))
+    // A document shown here for the first time fills the screen's width with its music (its white
+    // margins off the sides): first its page's width, then, once the pages are laid out, its ink.
+    if let Some(i) = app.active
+        && let Some(view) = app.views.get_mut(i)
         && app.touch.fitted != Some(view.id)
     {
-        app.touch.fitted = Some(view.id);
-        view.set_fit(crate::canvas::Fit::Page);
+        if app.touch.fitting == Some(view.id) && !view.screen_rects.is_empty() {
+            app.touch.fitted = Some(view.id);
+            app.touch.fitting = None;
+            fit_music(app, i);
+        } else if app.touch.fitting != Some(view.id) {
+            app.touch.fitting = Some(view.id);
+            view.set_fit(crate::canvas::Fit::Width);
+        }
+    }
+    two_fingers_pan(app, &ctx);
+    // A score taken off the start screen and opened again comes back to it.
+    if !app.touch.hidden.is_empty()
+        && let Some(path) = app.active.and_then(|i| app.views.get(i)).and_then(|v| app.session.get(v.id)).and_then(|d| d.path.clone())
+    {
+        app.touch.hidden.retain(|p| p.as_path() != std::path::Path::new(&path));
+    }
+    // A mark stays chosen only while moving and resizing marks: with any other tool its handles
+    // would linger over the score (a placed mark comes out chosen).
+    if app.quick_tool != QuickTool::Select
+        && let Some(view) = app.active.and_then(|i| app.views.get_mut(i))
+        && view.comments.selected.is_some()
+    {
+        view.comments.clear_selection();
+    }
+    if !app.touch.music {
+        set_bottom_room(0.0);
     }
     let started = std::time::Instant::now();
     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(Color32::from_gray(64))).show(ui, |ui| {
@@ -463,9 +628,15 @@ fn focus_frame(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
     // ponytail: temporary frame-time probe for the Android scroll stutter; remove once fixed.
     #[cfg(target_os = "android")]
     {
-        let (took, gap) = (started.elapsed().as_secs_f32() * 1000.0, ctx.input(|i| i.unstable_dt) * 1000.0);
-        if took > 20.0 || gap > 40.0 {
+        let (took, gap, down) = (started.elapsed().as_secs_f32() * 1000.0, ctx.input(|i| i.unstable_dt) * 1000.0, ctx.input(|i| i.pointer.any_down()));
+        // Only while a finger is down (a drag): between gestures the app rests on purpose.
+        if down && (took > 20.0 || gap > 25.0) {
             log::warn!("slow frame: pages {took:.1} ms, since last frame {gap:.1} ms");
+        }
+        // ponytail: temporary motion probe (finger vs page each frame), for the "jumpy" drag.
+        if down && let Some(view) = app.active.and_then(|i| app.views.get(i)) {
+            let finger = ctx.input(|i| i.pointer.delta());
+            log::info!("drag: dt {gap:.1} ms, finger {:.1} {:.1}, page at {:.1} {:.1}", finger.x, finger.y, view.last_scroll.x, view.last_scroll.y);
         }
     }
     #[cfg(not(target_os = "android"))]
@@ -501,6 +672,47 @@ fn focus_frame(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
     }
 }
 
+/// Fit view `i`'s music (its ink, not its white margins) to the screen's width, and remember
+/// that zoom; the page's width when that can't be found.
+fn fit_music(app: &mut PdfCraftApp, i: usize) {
+    // A column holds music when 1.5 % of it is ink: staves cross many, a scan's specks a few.
+    if let Err(e) = app.fit_visible_with(i, Some(0.015)) {
+        log::warn!("could not fit the music to the screen: {e}");
+    }
+    app.touch.fit_zoom = app.views.get(i).map(|v| v.zoom);
+    FIT_ZOOM.store(app.touch.fit_zoom.unwrap_or(0.0).to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The music view's fitted zoom ([`Touch::fit_zoom`]), as f32 bits, for the pages' drag.
+static FIT_ZOOM: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// While the score is fitted to the screen (`zoom` no more than the music view's fit), one
+/// finger moves the page along one axis only, the one it set off along (up and down, or
+/// sideways). Zoomed in, and with two fingers, it moves freely. `moved` is this frame's motion
+/// of the drag on `id`.
+pub(crate) fn lock_axis(ui: &egui::Ui, id: egui::Id, moved: egui::Vec2, zoom: f32) -> egui::Vec2 {
+    let fit = f32::from_bits(FIT_ZOOM.load(std::sync::atomic::Ordering::Relaxed));
+    if !on() || fit <= 0.0 || zoom > fit * 1.02 || ui.input(|i| i.multi_touch().is_some()) {
+        return moved;
+    }
+    let key = id.with("touch-axis");
+    let total = ui.input(|i| i.pointer.total_drag_delta()).unwrap_or_default();
+    let mut axis = ui.data(|d| d.get_temp::<u8>(key));
+    if ui.ctx().drag_started_id() == Some(id) || axis.is_none() {
+        // 1: sideways, 2: up and down; decided by the drag's start.
+        let decided = if total.x.abs() > total.y.abs() { 1 } else { 2 };
+        ui.data_mut(|d| d.insert_temp(key, decided));
+        axis = Some(decided);
+    }
+    if ui.ctx().drag_stopped_id() == Some(id) {
+        ui.data_mut(|d| d.remove::<u8>(key));
+    }
+    match axis {
+        Some(1) => egui::vec2(moved.x, 0.0),
+        _ => egui::vec2(0.0, moved.y),
+    }
+}
+
 /// A quick sideways swipe with the Hand tool turns the page (left: next, right: previous), while
 /// the page fits the screen; zoomed in, a sideways drag pans instead.
 fn swipe(app: &mut PdfCraftApp, ctx: &egui::Context) {
@@ -524,7 +736,8 @@ fn swipe(app: &mut PdfCraftApp, ctx: &egui::Context) {
         return;
     }
     let Some(view) = app.active.and_then(|i| app.views.get_mut(i)) else { return };
-    if view.fit == crate::canvas::Fit::None {
+    // Zoomed in past the fitted width, a sideways drag pans instead.
+    if view.fit == crate::canvas::Fit::None && app.touch.fit_zoom.is_none_or(|z| view.zoom > z * 1.02) {
         return;
     }
     let (id, current) = (view.id, view.current);
@@ -541,6 +754,16 @@ fn swipe(app: &mut PdfCraftApp, ctx: &egui::Context) {
     let Some(view) = app.active.and_then(|i| app.views.get_mut(i)) else { return };
     let page = if d.x < 0.0 { current.saturating_add(1) } else { current.saturating_sub(1) };
     view.go_to_page(page);
+}
+
+/// Close every open score (those with unsaved marks ask first) and show the start screen: a
+/// concert opens a tab per piece.
+fn close_all(app: &mut PdfCraftApp) {
+    app.run_command("file.close_all");
+    app.touch.concert.clear();
+    app.touch.home = true;
+    app.touch.bar = false;
+    close_music(app);
 }
 
 /// Leave the music marks: back to moving the page.
@@ -575,15 +798,19 @@ fn bar(app: &mut PdfCraftApp, ctx: &egui::Context) {
                     if tile(ui, "chevron-up", es("Hide", "Ocultar"), false).clicked() {
                         app.touch.bar = false;
                     }
+                    if app.views.len() > 1 && tile(ui, "circle-x", es("Close all", "Cerrar todas"), false).clicked() {
+                        close_all(app);
+                    }
                     if tile(ui, "sliders-horizontal", es("Editor", "Editor"), false).clicked() {
                         app.touch.focus = false;
                         app.touch.bar = false;
+                        // The editor starts out moving the page, as fingers expect.
                         close_music(app);
-                        app.quick_tool = QuickTool::Select;
                     }
                     if tile(ui, "maximize", es("Fit", "Ajustar"), false).clicked()
                         && let Some(view) = app.active.and_then(|i| app.views.get_mut(i))
                     {
+                        // The whole sheet, as large as the screen takes it.
                         view.set_fit(crate::canvas::Fit::Page);
                     }
                     if tile(ui, "♪", es("Marks", "Marcas"), app.touch.music).clicked() {
@@ -621,7 +848,11 @@ fn selection_tiles(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
     let Some(i) = app.active else { return };
     let Some(view) = app.views.get(i) else { return };
     let Some((page, index)) = view.comments.selected else {
-        ui.label(RichText::new(es("Tap a mark to select it", "Toca una marca para elegirla")).size(15.0).weak());
+        ui.label(
+            RichText::new(es("Tap a mark on the score to move it or change its size", "Toca una marca de la partitura para moverla o cambiar su tamaño"))
+                .size(16.0)
+                .strong(),
+        );
         return;
     };
     let Some(rect) = app.session.get(view.id).and_then(|d| d.info.annotations.iter().find(|a| a.page == page && a.index == index).map(|a| a.rect))
@@ -643,10 +874,41 @@ fn selection_tiles(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
     if tile(ui, "trash-2", es("Delete", "Eliminar"), false).clicked() {
         edit = Some(pdfcraft_engine::Edit::DeleteAnnotation { page, index });
     }
+    // A written note turns over (stem down) and takes or loses its dot.
+    let note = app
+        .session
+        .get(view.id)
+        .and_then(|d| d.info.annotations.iter().find(|a| a.page == page && a.index == index))
+        .and_then(|a| Some((crate::music_ui::parse_note(a.contents.as_deref()?)?, a.author.clone().unwrap_or_default())));
+    if let Some(((kind, down, dot), author)) = note {
+        let turn = tile(ui, "rotate-cw", es("Turn", "Girar"), down).clicked();
+        let dotted = tile(ui, "circle-dot", es("Dot", "Puntillo"), dot).clicked();
+        if turn || dotted {
+            let (down, new_dot) = (down ^ turn, dot ^ dotted);
+            // The dot widens the box (on the right of the head as shown); the head stays put.
+            let [x0, y0, x1, y1] = rect.map(f64::from);
+            let room = if new_dot == dot { 0.0 } else { pdfcraft_engine::NOTE_DOT_ROOM * (y1 - y0) / kind.size().1.max(1.0) };
+            let x1 = if new_dot { x1 + room } else { (x1 - room).max(x0 + 1.0) };
+            let by = crate::music_ui::note_flags(down, new_dot);
+            let contents = crate::music_ui::note_contents(kind, by.as_deref());
+            let shape = pdfcraft_engine::Shape::Stamp { rect: [x0, y0, x1, y1], stamp: kind, by };
+            let add = pdfcraft_engine::NewAnnotation { page, style: pdfcraft_engine::Style::default_for(&shape), shape, contents, author };
+            // One step to undo: the note is replaced by its turned or dotted self.
+            edit = Some(pdfcraft_engine::Edit::Batch {
+                label: es("Change note", "Cambiar nota").to_owned(),
+                edits: vec![pdfcraft_engine::Edit::DeleteAnnotation { page, index }, pdfcraft_engine::Edit::AddAnnotation(add)],
+            });
+        }
+    }
+    ui.label(
+        RichText::new(es("Drag the mark to move it · pull a corner to resize", "Arrastra la marca para moverla · tira de una esquina para el tamaño"))
+            .size(15.0)
+            .weak(),
+    );
     if let Some(e) = edit
         && let Some(view) = app.views.get_mut(i)
     {
-        if matches!(e, pdfcraft_engine::Edit::DeleteAnnotation { .. }) {
+        if matches!(e, pdfcraft_engine::Edit::DeleteAnnotation { .. } | pdfcraft_engine::Edit::Batch { .. }) {
             view.comments.selected = None;
         }
         view.pending_edit = Some(e);
@@ -725,7 +987,7 @@ fn music_sheet(app: &mut PdfCraftApp, ctx: &egui::Context) {
     use crate::comments::CommentTool;
     // One area per fold state: an area anchored to the bottom is placed by the size it had the frame
     // before, so a sheet unfolded in the folded one's area grew down off the screen.
-    egui::Area::new(egui::Id::unique(("touch_music", app.touch.folded)))
+    let shown = egui::Area::new(egui::Id::unique(("touch_music", app.touch.folded)))
         .anchor(Align2::LEFT_BOTTOM, vec2(12.0, -12.0))
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
@@ -734,7 +996,7 @@ fn music_sheet(app: &mut PdfCraftApp, ctx: &egui::Context) {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     let tool = app.quick_tool;
-                    if tile(ui, "hand", es("Move", "Mover"), tool == QuickTool::Hand).clicked() {
+                    if tile(ui, "hand", es("Pan", "Desplazar"), tool == QuickTool::Hand).clicked() {
                         app.quick_tool = QuickTool::Hand;
                         app.touch.tool = None;
                     }
@@ -751,7 +1013,8 @@ fn music_sheet(app: &mut PdfCraftApp, ctx: &egui::Context) {
                         app.quick_tool = eraser;
                     }
                     let select = QuickTool::Select;
-                    if tile(ui, "mouse-pointer-2", es("Select", "Seleccionar"), tool == select).clicked() {
+                    // Named for what it's for: a player looks for "move this mark", not "select".
+                    if tile(ui, "move", es("Move / resize", "Mover / tamaño"), tool == select).clicked() {
                         app.quick_tool = select;
                         app.touch.tool = None;
                     }
@@ -800,8 +1063,8 @@ fn music_sheet(app: &mut PdfCraftApp, ctx: &egui::Context) {
                         es("Choose a colour and run your finger over what matters.", "Elige un color y pasa el dedo por lo importante.")
                     }
                     QuickTool::Select => es(
-                        "Tap a mark to select it; drag it to move it, or its corners to resize it.",
-                        "Toca una marca para elegirla; arrástrala para moverla o tira de sus esquinas para cambiar el tamaño.",
+                        "Larger and Smaller change the chosen mark's size in steps; Pan goes back to moving the page.",
+                        "Más grande y Más pequeña cambian el tamaño de la marca elegida a saltos; Desplazar vuelve a mover la página.",
                     ),
                     QuickTool::Stamp(k) if k.stretches() => es(
                         "Drag across the score to draw it as long as you need.",
@@ -810,29 +1073,48 @@ fn music_sheet(app: &mut PdfCraftApp, ctx: &egui::Context) {
                     _ => es("Choose a mark, then tap the score to place it.", "Elige una marca y toca la partitura para ponerla."),
                 };
                 ui.label(RichText::new(hint).size(15.0).weak());
-                egui::ScrollArea::vertical().max_height(ctx.content_rect().height() * 0.34).show(ui, |ui| {
+                // Always this tall: a scroll area left to shrink to its content came back from
+                // folding shorter than before, cutting the marks off.
+                let palette_h = ctx.content_rect().height() * 0.34;
+                egui::ScrollArea::vertical().auto_shrink([false, false]).min_scrolled_height(palette_h).max_height(palette_h).show(ui, |ui| {
                     crate::music_ui::palette(app, ui, true);
                 });
             });
         });
+    // The pages scroll on past the last one by as much as the sheet covers, so its end can be
+    // brought up above the sheet and marked.
+    set_bottom_room(ctx.content_rect().bottom() - shown.response.rect.top() + 12.0);
 }
 
 /// In the full editor with a document open: a button back to the music view.
 pub(crate) fn editor_overlay(app: &mut PdfCraftApp, ctx: &egui::Context) {
-    note_touch(app);
+    note_touch(app, ctx);
     if !app.touch.enabled || app.touch.focus || app.active.is_none() {
         return;
     }
-    // Bottom centre, small: the corners hold the editor's own tools.
-    egui::Area::new(egui::Id::unique("touch_reading")).anchor(Align2::CENTER_BOTTOM, vec2(0.0, -56.0)).order(egui::Order::Foreground).show(
+    set_bottom_room(0.0);
+    two_fingers_pan(app, ctx);
+    // Bottom centre, small: the corners hold the editor's own tools. A drag moves it off what it
+    // covers; a tap goes to the music view.
+    let offset = app.touch.music_button;
+    egui::Area::new(egui::Id::unique("touch_reading")).anchor(Align2::CENTER_BOTTOM, vec2(0.0, -56.0) + offset).order(egui::Order::Foreground).show(
         ctx,
         |ui| {
             let accent = ui.visuals().selection.bg_fill;
             let b = egui::Button::new(RichText::new(es("♪ Music view", "♪ Modo música")).size(18.0).strong().color(Color32::WHITE))
                 .fill(accent)
                 .min_size(vec2(150.0, 44.0))
-                .corner_radius(22.0);
-            if ui.add(b).clicked() {
+                .corner_radius(22.0)
+                .sense(egui::Sense::click_and_drag());
+            let resp = ui.add(b);
+            if resp.dragged() {
+                // Kept on the screen: at most the screen's half width either side, and between
+                // the top and the bottom edge.
+                let screen = ctx.content_rect();
+                let max = vec2((screen.width() / 2.0 - 80.0).max(0.0), (screen.height() - 120.0).max(0.0));
+                let moved = app.touch.music_button + resp.drag_delta();
+                app.touch.music_button = vec2(moved.x.clamp(-max.x, max.x), moved.y.clamp(-max.y, 40.0));
+            } else if resp.clicked() {
                 app.touch.focus = true;
                 app.touch.bar = false;
                 app.quick_tool = QuickTool::Hand;

@@ -58,6 +58,9 @@ pub(crate) fn place(cx: PageToolContext<'_>, kind: pdfcraft_engine::StampKind, b
     let PageToolContext { ui, resp, xf, ptr, page, info, .. } = cx;
     let Some(page_info) = info.pages.get(page) else { return false };
     let (w, h) = kind.size();
+    // A dotted note is wider by its dot; its head stays where the tap puts it.
+    let note_by = (kind.note().is_some() && !kind.is_metronome()).then(crate::music_ui::note_by).flatten();
+    let (w, anchor_scale) = if note_by.is_some() { (w + pdfcraft_engine::NOTE_DOT_ROOM, w / (w + pdfcraft_engine::NOTE_DOT_ROOM)) } else { (w, 1.0) };
     // A hairpin or slur dragged across the page: as long as the drag, at its own height, level
     // midway between the drag's ends. A tap still places one at its natural length.
     let mut span = None;
@@ -83,20 +86,32 @@ pub(crate) fn place(cx: PageToolContext<'_>, kind: pdfcraft_engine::StampKind, b
         return false;
     }
     let (vx, vy) = xf.screen_to_view(p);
-    let ((x0, x1), cy) = span.unwrap_or(((f64::from(vx) - w / 2.0, f64::from(vx) + w / 2.0), f64::from(vy)));
-    let a = page_info.view_to_user(x0 as f32, (cy - h / 2.0) as f32);
-    let b = page_info.view_to_user(x1 as f32, (cy + h / 2.0) as f32);
+    // A tap puts the stamp's anchor under the pointer (a written note's head, others' middle).
+    let (fx, fy) = if span.is_some() { (0.5, 0.5) } else { kind.anchor() };
+    let fx = if kind.note() == Some((pdfcraft_engine::NoteValue::Whole, false)) { fx } else { fx * anchor_scale };
+    let ((x0, x1), cy) = span.unwrap_or(((f64::from(vx) - w * fx, f64::from(vx) + w * (1.0 - fx)), f64::from(vy)));
+    let a = page_info.view_to_user(x0 as f32, (cy - h * (1.0 - fy)) as f32);
+    let b = page_info.view_to_user(x1 as f32, (cy + h * fy) as f32);
     let rect = [f64::from(a[0].min(b[0])), f64::from(a[1].min(b[1])), f64::from(a[0].max(b[0])), f64::from(a[1].max(b[1]))];
     let by = match kind {
         // A number mark shows the palette's number (and moves on to the next when counting up).
         pdfcraft_engine::StampKind::Number => Some(crate::music_ui::take_number()),
         // A named jump carries the palette's letter.
         pdfcraft_engine::StampKind::JumpFrom | pdfcraft_engine::StampKind::JumpTo => Some(crate::music_ui::jump_letter()),
+        // A metronome mark carries the palette's tempo.
+        k if k.is_metronome() => Some(crate::music_ui::bpm()),
+        // A written note: dotted or not, as the palette says.
+        k if k.note().is_some() => note_by,
         k if k.group() == pdfcraft_engine::StampGroup::Dynamic => Some(by_line.to_owned()),
         _ => None,
     };
     // A jump mark carries text saying which jump it is, which is how a tap knows where it leads.
-    let contents = crate::music_ui::jump_contents(kind, by.as_deref());
+    let contents = if kind.note().is_some() && !kind.is_metronome() {
+        // A written note's text says what it is, so the music sheet can turn it or dot it.
+        crate::music_ui::note_contents(kind, by.as_deref())
+    } else {
+        crate::music_ui::jump_contents(kind, by.as_deref())
+    };
     let shape = pdfcraft_engine::Shape::Stamp { rect, stamp: kind, by };
     view.pending_edit = Some(pdfcraft_engine::Edit::AddAnnotation(pdfcraft_engine::NewAnnotation {
         page,

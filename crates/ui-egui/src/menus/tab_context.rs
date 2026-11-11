@@ -5,6 +5,8 @@ pub(crate) enum Action {
     /// Close a tab, by its view key (`DocView::view_key`: split view can show one document in two
     /// tabs).
     Close(u64),
+    /// Close every tab; unsaved changes ask first (File ▸ Close all).
+    CloseAll,
     Reopen,
     Reveal(DocId),
     /// Split right (or down) with a tab, by its view key.
@@ -22,6 +24,7 @@ impl crate::PdfCraftApp {
                     self.request_close_tab(i);
                 }
             }
+            Action::CloseAll => self.close_all(),
             Action::Split { tab, down } => {
                 if let Some(i) = self.tab_with_key(tab) {
                     self.split_tab(i, down);

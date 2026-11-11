@@ -26,6 +26,53 @@ pub(crate) fn take_number() -> String {
     n.to_string()
 }
 
+/// The beats per minute the next metronome mark shows.
+static BPM: AtomicU32 = AtomicU32::new(120);
+
+/// The tempo for a metronome mark being placed now.
+pub(crate) fn bpm() -> String {
+    BPM.load(Ordering::Relaxed).to_string()
+}
+
+/// Whether the next written note is dotted.
+static NOTE_DOTTED: AtomicBool = AtomicBool::new(false);
+
+/// The `by` line of a written note being placed now: dotted or not (it starts stem up).
+pub(crate) fn note_by() -> Option<String> {
+    NOTE_DOTTED.load(Ordering::Relaxed).then(|| pdfcraft_engine::NOTE_DOT.to_owned())
+}
+
+/// The text a written note carries, which is how the music sheet knows it's a note and which
+/// way it's turned: "Quarter note", "Quarter note, down, dot".
+pub(crate) fn note_contents(kind: StampKind, by: Option<&str>) -> String {
+    let mut out = kind.label().to_owned();
+    for word in by.unwrap_or_default().split_whitespace() {
+        out.push_str(", ");
+        out.push_str(word);
+    }
+    out
+}
+
+/// A written note's kind, and whether it's turned (stem down) and dotted, from its text
+/// ([`note_contents`]); `None` for anything else.
+pub(crate) fn parse_note(contents: &str) -> Option<(StampKind, bool, bool)> {
+    let mut parts = contents.split(", ");
+    let label = parts.next()?;
+    let kind = StampKind::MUSIC.into_iter().find(|k| k.note().is_some() && !k.is_metronome() && k.label() == label)?;
+    let (mut down, mut dot) = (false, false);
+    for p in parts {
+        down |= p == pdfcraft_engine::NOTE_DOWN;
+        dot |= p == pdfcraft_engine::NOTE_DOT;
+    }
+    Some((kind, down, dot))
+}
+
+/// A written note's `by` line.
+pub(crate) fn note_flags(down: bool, dot: bool) -> Option<String> {
+    let words: Vec<&str> = [(down, pdfcraft_engine::NOTE_DOWN), (dot, pdfcraft_engine::NOTE_DOT)].into_iter().filter(|(on, _)| *on).map(|(_, w)| w).collect();
+    (!words.is_empty()).then(|| words.join(" "))
+}
+
 /// The letters named jumps use.
 const JUMP_LETTERS: [&str; 8] = ["A", "B", "C", "D", "E", "F", "G", "H"];
 /// The letter the next named jump gets (an index into [`JUMP_LETTERS`]).
@@ -78,17 +125,40 @@ fn name(kind: StampKind) -> &'static str {
         DalSegno => es("D.S. → segno", "D.S. → segno"),
         ToCoda => es("To Coda → coda", "To Coda → coda"),
         DaCapo => es("D.C. → start", "D.C. → inicio"),
+        // The interface fonts have no note glyphs: the buttons name the note (the mark draws it).
+        MetroWhole => es("Whole =", "Redonda ="),
+        MetroHalf => es("Half =", "Blanca ="),
+        MetroDottedHalf => es("Dotted half =", "Blanca con puntillo ="),
+        MetroQuarter => es("Quarter =", "Negra ="),
+        MetroDottedQuarter => es("Dotted quarter =", "Negra con puntillo ="),
+        MetroEighth => es("Eighth =", "Corchea ="),
+        MetroDottedEighth => es("Dotted eighth =", "Corchea con puntillo ="),
+        MetroSixteenth => es("Sixteenth =", "Semicorchea ="),
+        NoteWhole => es("Whole", "Redonda"),
+        NoteHalf => es("Half", "Blanca"),
+        NoteQuarter => es("Quarter", "Negra"),
+        NoteEighth => es("Eighth", "Corchea"),
+        NoteSixteenth => es("Sixteenth", "Semicorchea"),
         other => other.label(),
     }
 }
 
 /// The palette's sections, in order.
-fn sections() -> [(&'static str, &'static [StampKind]); 9] {
+fn sections() -> [(&'static str, &'static [StampKind]); 12] {
     use StampKind::*;
     [
         (es("Dynamics", "Dinámicas"), &[Ppp, Pp, Piano, Mp, Mf, Forte, Ff, Fff, Sfz, Fp]),
         (es("Hairpins and slurs", "Reguladores y ligaduras"), &[Crescendo, Diminuendo, SlurAbove, SlurBelow]),
-        (es("Tempo", "Tempo"), &[Cresc, Dim, Rit, Accel, ATempo]),
+        (es("Tempo", "Tempo"), &[Grave, Largo, Lento, Adagio, Andante, Moderato, Allegretto, Allegro, Vivace, Presto]),
+        (es("Tempo changes and words", "Cambios de tempo y palabras"), &[Cresc, Dim, Rit, Rall, Accel, ATempo, MenoMosso, PiuMosso]),
+        (
+            es("Metronome", "Metrónomo"),
+            &[MetroWhole, MetroHalf, MetroDottedHalf, MetroQuarter, MetroDottedQuarter, MetroEighth, MetroDottedEighth, MetroSixteenth],
+        ),
+        (
+            es("Notes: tap where the head goes", "Notas: toca donde va la cabeza"),
+            &[NoteWhole, NoteHalf, NoteQuarter, NoteEighth, NoteSixteenth],
+        ),
         (es("Articulation", "Articulación"), &[Accent, Staccato, Tenuto, Marcato, Fermata, BreathMark, Caesura]),
         (es("Bowing and pedal", "Arco y pedal"), &[UpBow, DownBow, PedalDown, PedalUp, Glasses]),
         (es("Fingering", "Digitación"), &[Finger1, Finger2, Finger3, Finger4, Finger5]),
@@ -130,15 +200,74 @@ pub(crate) fn palette(app: &mut PdfCraftApp, ui: &mut egui::Ui, touch: bool) {
                 {
                     text = text.italics().strong();
                 }
-                if ui.add(egui::Button::new(text).selected(active).min_size(min)).clicked() {
+                // Notes and metronome marks show the note itself, drawn (the interface fonts have
+                // no note glyphs); the name is for screen readers.
+                let resp = if let Some((value, dotted)) = kind.note() {
+                    let metro = kind.is_metronome();
+                    let text = RichText::new(if metro { "        = " } else { " " }).size(size);
+                    let b = ui.add(egui::Button::new(text).selected(active).min_size(min.max(vec2(size * 2.2, size * 2.2))));
+                    let ink = if active { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
+                    let h = b.rect.height() * 0.62;
+                    let x = if metro { b.rect.left() + size * 0.6 } else { b.rect.center().x - h * 0.2 };
+                    paint_note(ui.painter(), value, dotted, egui::pos2(x, b.rect.center().y + h * 0.5), h, ink);
+                    b.on_hover_text(name(kind))
+                } else {
+                    ui.add(egui::Button::new(text).selected(active).min_size(min))
+                };
+                if resp.clicked() {
                     app.quick_tool = QuickTool::Stamp(kind);
                 }
             }
             if kinds.contains(&StampKind::Number) {
                 number_controls(ui, size, min);
             }
+            if kinds.contains(&StampKind::MetroQuarter) {
+                bpm_controls(ui, size, min);
+            }
+            if kinds.contains(&StampKind::NoteQuarter) {
+                let mut dotted = NOTE_DOTTED.load(Ordering::Relaxed);
+                ui.add(crate::widgets::checkbox(&mut dotted, RichText::new(es("Dotted", "Puntillo")).size(size * 0.75)));
+                NOTE_DOTTED.store(dotted, Ordering::Relaxed);
+            }
         });
         ui.add_space(if touch { 6.0 } else { 2.0 });
+    }
+}
+
+/// A note of `value` (stem up) `h` tall: its head's left edge and bottom at `at`.
+fn paint_note(p: &egui::Painter, value: pdfcraft_engine::NoteValue, dotted: bool, at: egui::Pos2, h: f32, ink: egui::Color32) {
+    use pdfcraft_engine::NoteValue::*;
+    let hh = if value == Whole { h * 0.4 } else { h / 4.5 * 1.15 };
+    let hw = hh * if value == Whole { 1.6 } else { 1.35 };
+    let head = egui::pos2(at.x + hw / 2.0, at.y - hh / 2.0);
+    let radius = vec2(hw / 2.0, hh / 2.0);
+    let line = egui::Stroke::new((hh * 0.16).max(1.2), ink);
+    if matches!(value, Whole | Half) {
+        p.add(egui::Shape::ellipse_stroke(head, radius - vec2(line.width / 2.0, line.width / 2.0), line));
+    } else {
+        p.add(egui::Shape::ellipse_filled(head, radius, ink));
+    }
+    let mut right = at.x + hw;
+    if value != Whole {
+        let sx = at.x + hw - line.width / 2.0;
+        let top = at.y - h;
+        p.line_segment([egui::pos2(sx, head.y), egui::pos2(sx, top)], line);
+        let flags = match value {
+            Eighth => 1,
+            Sixteenth => 2,
+            _ => 0,
+        };
+        for i in 0..flags {
+            let y = top + i as f32 * hh * 0.8;
+            let pts = [egui::pos2(sx, y), egui::pos2(sx + hh * 0.9, y + hh * 1.0), egui::pos2(sx + hh * 0.7, y + hh * 2.0)];
+            p.add(egui::Shape::line(pts.to_vec(), line));
+        }
+        if flags > 0 {
+            right = sx + hh * 0.9;
+        }
+    }
+    if dotted {
+        p.circle_filled(egui::pos2(right + hh * 0.45, head.y), hh * 0.2, ink);
     }
 }
 
@@ -168,6 +297,19 @@ fn number_controls(ui: &mut egui::Ui, size: f32, min: egui::Vec2) {
     let mut up = COUNT_UP.load(Ordering::Relaxed);
     ui.add(crate::widgets::checkbox(&mut up, RichText::new(es("Count up", "Contar +1")).size(size * 0.75)));
     COUNT_UP.store(up, Ordering::Relaxed);
+}
+
+/// The metronome marks' tempo, − and + to change it (by 2, as metronomes step at the slow end).
+fn bpm_controls(ui: &mut egui::Ui, size: f32, min: egui::Vec2) {
+    let mut n = BPM.load(Ordering::Relaxed);
+    if ui.add(egui::Button::new(RichText::new("−").size(size)).min_size(min)).clicked() {
+        n = n.saturating_sub(2).max(10);
+    }
+    ui.add(egui::DragValue::new(&mut n).range(10..=400).speed(0.5));
+    if ui.add(egui::Button::new(RichText::new("+").size(size)).min_size(min)).clicked() {
+        n = n.saturating_add(2).min(400);
+    }
+    BPM.store(n, Ordering::Relaxed);
 }
 
 /// Set when a tap followed a jump mark this frame, so the reading view doesn't also take the tap.

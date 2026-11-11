@@ -1,6 +1,6 @@
 //! PdfCraft on Android: the same app and engine as the desktop, in a native activity.
 //!
-//! The start screen lists the PDFs in the app's own folder (`Android/data/org.pdfcraft.music/files/`),
+//! The start screen lists the PDFs in the app's own folder (`Android/data/io.github.pablogonsan8.pdfmusiccraft/files/`),
 //! Download and Documents, and the recent files. Open and Save use the app's own file browser (`pdfcraft_ui_egui::touch`), which
 //! needs "All files access" (Settings ▸ Apps ▸ PdfCraft ▸ Permissions ▸ Files) to see Download
 //! and Documents. ponytail: no Storage Access Framework (that needs JNI and a Java activity);

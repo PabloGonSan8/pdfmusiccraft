@@ -1142,11 +1142,15 @@ fn music_marks_draw_their_words_and_signs() {
                     StampKind::JumpFrom | StampKind::JumpTo => "A",
                     _ => kind.label(),
                 };
-                assert!(ap.contains(&format!("/{name} ")) && ap.contains(&format!("({shown}) Tj")), "{kind:?}: {ap}");
+                // "più" is WinAnsi, not UTF-8: the check reads its ASCII part.
+                let shown = shown.split('\u{f9}').next_back().unwrap_or(shown);
+                assert!(ap.contains(&format!("/{name} ")) && ap.contains(&format!("{shown}) Tj")), "{kind:?}: {ap}");
                 assert_eq!(ap.contains("re S"), kind.is_rehearsal(), "only rehearsal letters are boxed: {kind:?}: {ap}");
             }
+            // A metronome mark: a note, and its tempo in Times.
+            None if kind.is_metronome() => assert!(ap.contains("(= 120) Tj") && ap.contains("f\n"), "{kind:?}: {ap}"),
             // Signs are paths alone.
-            None => assert!(!ap.contains("Tj") && (ap.contains("S\n") || ap.contains("f\n")), "{kind:?}: {ap}"),
+            None => assert!(!ap.contains("Tj") && (ap.contains("S\n") || ap.contains("f\n") || ap.contains("f*\n")), "{kind:?}: {ap}"),
         }
     }
     assert!(list(&doc, 0).iter().any(|d| d.name(b"Name") == Some(b"PCMusicF".as_slice())), "the forte mark is saved under its name");
@@ -1160,6 +1164,36 @@ fn music_marks_draw_their_words_and_signs() {
     )
     .unwrap();
     assert!(ap_content(&doc, &list(&doc, 0)[j]).contains("(12) Tj"));
+    // A metronome mark draws the tempo it was given.
+    let (w, h) = StampKind::MetroDottedQuarter.size();
+    let shape = Shape::Stamp { rect: [300.0, 650.0, 300.0 + w, 650.0 + h], stamp: StampKind::MetroDottedQuarter, by: Some("76".into()) };
+    let j = add_annotation(
+        &mut doc,
+        &NewAnnotation { page: 0, style: Style::default_for(&shape), shape, contents: String::new(), author: "Ada".into() },
+        &Meta::default(),
+    )
+    .unwrap();
+    assert!(ap_content(&doc, &list(&doc, 0)[j]).contains("(= 76) Tj"));
+    // A written note turned over and dotted: drawn upside down, with one more fill (the dot).
+    let (w, h) = StampKind::NoteQuarter.size();
+    let plain = Shape::Stamp { rect: [40.0, 700.0, 40.0 + w, 700.0 + h], stamp: StampKind::NoteQuarter, by: None };
+    let turned = Shape::Stamp { rect: [80.0, 700.0, 80.0 + w + crate::NOTE_DOT_ROOM, 700.0 + h], stamp: StampKind::NoteQuarter, by: Some("down dot".into()) };
+    let mut aps = Vec::new();
+    for shape in [plain, turned] {
+        let j = add_annotation(
+            &mut doc,
+            &NewAnnotation { page: 0, style: Style::default_for(&shape), shape, contents: String::new(), author: "Ada".into() },
+            &Meta::default(),
+        )
+        .unwrap();
+        aps.push(ap_content(&doc, &list(&doc, 0)[j]));
+    }
+    assert!(!aps[0].contains("q -1 0 0 -1") && aps[1].contains("q -1 0 0 -1"), "{}", aps[1]);
+    assert_eq!(aps[1].matches("f\n").count(), aps[0].matches("f\n").count() + 1, "{}", aps[1]);
+    // A written note's head is where a tap puts it: low on the left, inside the box.
+    let (ax, ay) = StampKind::NoteQuarter.anchor();
+    assert!(ax > 0.0 && ax <= 0.5 && ay > 0.0 && ay < 0.2, "{ax} {ay}");
+    assert_eq!(StampKind::NoteWhole.anchor(), (0.5, 0.5));
     // A hairpin stretched to a long passage stays a thin wedge.
     let (w, h) = StampKind::Crescendo.size();
     assert!(w > h * 4.0);

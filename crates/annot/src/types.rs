@@ -152,6 +152,20 @@ impl FillMark {
 pub(crate) const MUSIC_DYNAMIC_SIZE: f64 = 18.0;
 /// The font size (points) of a tempo or dynamic word (rit., cresc.) placed with a click.
 pub(crate) const MUSIC_WORD_SIZE: f64 = 13.0;
+/// The font size (points) of a tempo heading (Allegro, Andante) placed with a click.
+pub(crate) const MUSIC_TEMPO_SIZE: f64 = 15.0;
+/// A written note's `by` line when it is turned over: stem down.
+pub const NOTE_DOWN: &str = "down";
+/// A written note's `by` line word when it is dotted.
+pub const NOTE_DOT: &str = "dot";
+/// How much wider (points, at the size a tap places) a dotted note's box is, for its dot.
+pub const NOTE_DOT_ROOM: f64 = NOTE_HEAD * 0.75;
+/// A written note's head height (points) placed with a click: about a staff space of a part.
+pub const NOTE_HEAD: f64 = 7.0;
+/// A note's head is this many times wider than tall.
+pub(crate) const NOTE_HEAD_WIDTH: f64 = 1.35;
+/// A stemmed note is this many head heights tall (the head, then the stem above it).
+pub(crate) const NOTE_HEIGHT: f64 = 4.5;
 
 /// The stamps of Acrobat's stamp palette (drawn in PdfCraft's own style), and the music marks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -248,6 +262,46 @@ pub enum StampKind {
     /// letter is the stamp's `by` line; a tap on one goes to the other.
     JumpFrom,
     JumpTo,
+    /// Tempo headings, in upright bold serif letters.
+    Grave,
+    Largo,
+    Lento,
+    Adagio,
+    Andante,
+    Moderato,
+    Allegretto,
+    Allegro,
+    Vivace,
+    Presto,
+    /// Tempo changes, in italic serif letters like rit. and accel.
+    Rall,
+    MenoMosso,
+    PiuMosso,
+    /// Metronome marks: a note, "=", and the beats per minute (the stamp's `by` line).
+    MetroWhole,
+    MetroHalf,
+    MetroDottedHalf,
+    MetroQuarter,
+    MetroDottedQuarter,
+    MetroEighth,
+    MetroDottedEighth,
+    MetroSixteenth,
+    /// Notes written into the score where the player puts them (stem up), drawn as paths.
+    NoteWhole,
+    NoteHalf,
+    NoteQuarter,
+    NoteEighth,
+    NoteSixteenth,
+}
+
+/// A note's value, for the notes and metronome marks ([`StampKind::note`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoteValue {
+    Whole,
+    Half,
+    Quarter,
+    Eighth,
+    Sixteenth,
 }
 
 /// Where a jump mark sends the player ([`StampKind::jump_family`]).
@@ -272,18 +326,20 @@ pub enum StampGroup {
 
 impl StampKind {
     /// The music marks, in palette order.
-    pub const MUSIC: [StampKind; 53] = {
+    pub const MUSIC: [StampKind; 79] = {
         use StampKind::*;
         [
             Ppp, Pp, Piano, Mp, Mf, Forte, Ff, Fff, Sfz, Fp, Crescendo, Diminuendo, Cresc, Dim, Rit, Accel, ATempo, Accent, Staccato, Tenuto,
             Marcato, Fermata, BreathMark, Caesura, UpBow, DownBow, PedalDown, PedalUp, Glasses, SlurAbove, SlurBelow, Finger1, Finger2, Finger3,
             Finger4, Finger5, RehearsalA, RehearsalB, RehearsalC, RehearsalD, RehearsalE, RehearsalF, RehearsalG, RehearsalH, Number, Segno, Coda,
-            DalSegno, ToCoda, DaCapo, Fine, JumpFrom, JumpTo,
+            DalSegno, ToCoda, DaCapo, Fine, JumpFrom, JumpTo, Grave, Largo, Lento, Adagio, Andante, Moderato, Allegretto, Allegro, Vivace, Presto,
+            Rall, MenoMosso, PiuMosso, MetroWhole, MetroHalf, MetroDottedHalf, MetroQuarter, MetroDottedQuarter, MetroEighth, MetroDottedEighth,
+            MetroSixteenth, NoteWhole, NoteHalf, NoteQuarter, NoteEighth, NoteSixteenth,
         ]
     };
 
     /// Every stamp: the business palette, then the music marks ([`Self::MUSIC`]).
-    pub const ALL: [StampKind; 75] = [
+    pub const ALL: [StampKind; 101] = [
         StampKind::DynApproved,
         StampKind::DynConfidential,
         StampKind::DynReceived,
@@ -359,6 +415,32 @@ impl StampKind {
         StampKind::Fine,
         StampKind::JumpFrom,
         StampKind::JumpTo,
+        StampKind::Grave,
+        StampKind::Largo,
+        StampKind::Lento,
+        StampKind::Adagio,
+        StampKind::Andante,
+        StampKind::Moderato,
+        StampKind::Allegretto,
+        StampKind::Allegro,
+        StampKind::Vivace,
+        StampKind::Presto,
+        StampKind::Rall,
+        StampKind::MenoMosso,
+        StampKind::PiuMosso,
+        StampKind::MetroWhole,
+        StampKind::MetroHalf,
+        StampKind::MetroDottedHalf,
+        StampKind::MetroQuarter,
+        StampKind::MetroDottedQuarter,
+        StampKind::MetroEighth,
+        StampKind::MetroDottedEighth,
+        StampKind::MetroSixteenth,
+        StampKind::NoteWhole,
+        StampKind::NoteHalf,
+        StampKind::NoteQuarter,
+        StampKind::NoteEighth,
+        StampKind::NoteSixteenth,
     ];
 
     pub fn group(self) -> StampGroup {
@@ -397,13 +479,52 @@ impl StampKind {
         matches!(self, RehearsalA | RehearsalB | RehearsalC | RehearsalD | RehearsalE | RehearsalF | RehearsalG | RehearsalH)
     }
 
+    /// A metronome mark's or a written note's note value and whether it is dotted; `None` for
+    /// every other stamp.
+    pub fn note(self) -> Option<(NoteValue, bool)> {
+        use StampKind::*;
+        Some(match self {
+            MetroWhole | NoteWhole => (NoteValue::Whole, false),
+            MetroHalf | NoteHalf => (NoteValue::Half, false),
+            MetroDottedHalf => (NoteValue::Half, true),
+            MetroQuarter | NoteQuarter => (NoteValue::Quarter, false),
+            MetroDottedQuarter => (NoteValue::Quarter, true),
+            MetroEighth | NoteEighth => (NoteValue::Eighth, false),
+            MetroDottedEighth => (NoteValue::Eighth, true),
+            MetroSixteenth | NoteSixteenth => (NoteValue::Sixteenth, false),
+            _ => return None,
+        })
+    }
+
+    /// A metronome mark ("♩ = 120"), whose beats per minute are its `by` line.
+    pub fn is_metronome(self) -> bool {
+        use StampKind::*;
+        matches!(self, MetroWhole | MetroHalf | MetroDottedHalf | MetroQuarter | MetroDottedQuarter | MetroEighth | MetroDottedEighth | MetroSixteenth)
+    }
+
+    /// Where in the stamp's box (fractions of its width and height, from the bottom left) a tap
+    /// puts it: a written note's head lands under the finger, every other mark's middle.
+    pub fn anchor(self) -> (f64, f64) {
+        match self.note() {
+            Some((value, _)) if value != NoteValue::Whole && !self.is_metronome() => {
+                let (w, h) = self.size();
+                let hh = h / NOTE_HEIGHT;
+                ((hh * NOTE_HEAD_WIDTH / 2.0 / w.max(1.0)).min(0.5), 0.5 / NOTE_HEIGHT)
+            }
+            _ => (0.5, 0.5),
+        }
+    }
+
     /// The standard face a music mark's text is set in; `None` for marks drawn as paths and for
     /// the business stamps.
     pub fn music_face(self) -> Option<pdfcraft_fonts::Std14> {
         use StampKind::*;
         match self {
             Ppp | Pp | Piano | Mp | Mf | Forte | Ff | Fff | Sfz | Fp | PedalDown => Some(pdfcraft_fonts::Std14::TimesBoldItalic),
-            Cresc | Dim | Rit | Accel | ATempo | DalSegno | ToCoda | DaCapo | Fine => Some(pdfcraft_fonts::Std14::TimesItalic),
+            Cresc | Dim | Rit | Accel | ATempo | DalSegno | ToCoda | DaCapo | Fine | Rall | MenoMosso | PiuMosso => {
+                Some(pdfcraft_fonts::Std14::TimesItalic)
+            }
+            Grave | Largo | Lento | Adagio | Andante | Moderato | Allegretto | Allegro | Vivace | Presto => Some(pdfcraft_fonts::Std14::TimesBold),
             Finger1 | Finger2 | Finger3 | Finger4 | Finger5 => Some(pdfcraft_fonts::Std14::TimesBold),
             RehearsalA | RehearsalB | RehearsalC | RehearsalD | RehearsalE | RehearsalF | RehearsalG | RehearsalH => {
                 Some(pdfcraft_fonts::Std14::TimesBold)
@@ -490,6 +611,32 @@ impl StampKind {
             Fine => "Fine",
             JumpFrom => "Jump",
             JumpTo => "Jump target",
+            Grave => "Grave",
+            Largo => "Largo",
+            Lento => "Lento",
+            Adagio => "Adagio",
+            Andante => "Andante",
+            Moderato => "Moderato",
+            Allegretto => "Allegretto",
+            Allegro => "Allegro",
+            Vivace => "Vivace",
+            Presto => "Presto",
+            Rall => "rall.",
+            MenoMosso => "meno mosso",
+            PiuMosso => "pi\u{f9} mosso",
+            MetroWhole => "Metronome whole",
+            MetroHalf => "Metronome half",
+            MetroDottedHalf => "Metronome dotted half",
+            MetroQuarter => "Metronome quarter",
+            MetroDottedQuarter => "Metronome dotted quarter",
+            MetroEighth => "Metronome eighth",
+            MetroDottedEighth => "Metronome dotted eighth",
+            MetroSixteenth => "Metronome sixteenth",
+            NoteWhole => "Whole note",
+            NoteHalf => "Half note",
+            NoteQuarter => "Quarter note",
+            NoteEighth => "Eighth note",
+            NoteSixteenth => "Sixteenth note",
         }
     }
 
@@ -572,6 +719,32 @@ impl StampKind {
             Fine => "PCMusicFine",
             JumpFrom => "PCMusicJumpFrom",
             JumpTo => "PCMusicJumpTo",
+            Grave => "PCMusicGrave",
+            Largo => "PCMusicLargo",
+            Lento => "PCMusicLento",
+            Adagio => "PCMusicAdagio",
+            Andante => "PCMusicAndante",
+            Moderato => "PCMusicModerato",
+            Allegretto => "PCMusicAllegretto",
+            Allegro => "PCMusicAllegro",
+            Vivace => "PCMusicVivace",
+            Presto => "PCMusicPresto",
+            Rall => "PCMusicRall",
+            MenoMosso => "PCMusicMenoMosso",
+            PiuMosso => "PCMusicPiuMosso",
+            MetroWhole => "PCMusicMetroWhole",
+            MetroHalf => "PCMusicMetroHalf",
+            MetroDottedHalf => "PCMusicMetroDottedHalf",
+            MetroQuarter => "PCMusicMetroQuarter",
+            MetroDottedQuarter => "PCMusicMetroDottedQuarter",
+            MetroEighth => "PCMusicMetroEighth",
+            MetroDottedEighth => "PCMusicMetroDottedEighth",
+            MetroSixteenth => "PCMusicMetroSixteenth",
+            NoteWhole => "PCMusicNoteWhole",
+            NoteHalf => "PCMusicNoteHalf",
+            NoteQuarter => "PCMusicNoteQuarter",
+            NoteEighth => "PCMusicNoteEighth",
+            NoteSixteenth => "PCMusicNoteSixteenth",
         }
     }
 
@@ -607,9 +780,29 @@ impl StampKind {
             // Room for two digits at a small size; more shrink to fit (or stretch the box).
             return (18.0, 16.0);
         }
+        if self.is_metronome() {
+            // The note, then "= 120" at the word size.
+            let h = MUSIC_WORD_SIZE * 1.7;
+            return (h / NOTE_HEIGHT * 3.0 + pdfcraft_fonts::Std14::TimesRoman.text_width(" = 120", MUSIC_WORD_SIZE) + 4.0, h);
+        }
+        if let Some((value, _)) = self.note() {
+            let hw = NOTE_HEAD * NOTE_HEAD_WIDTH;
+            return match value {
+                NoteValue::Whole => (NOTE_HEAD * 1.6, NOTE_HEAD),
+                NoteValue::Half | NoteValue::Quarter => (hw, NOTE_HEAD * NOTE_HEIGHT),
+                NoteValue::Eighth | NoteValue::Sixteenth => (hw + NOTE_HEAD * 0.9, NOTE_HEAD * NOTE_HEIGHT),
+            };
+        }
         if let Some(face) = self.music_face() {
             // The text at its usual size, with a little room around it.
-            let size = if face == pdfcraft_fonts::Std14::TimesBoldItalic { MUSIC_DYNAMIC_SIZE } else { MUSIC_WORD_SIZE };
+            let tempo = matches!(self, Grave | Largo | Lento | Adagio | Andante | Moderato | Allegretto | Allegro | Vivace | Presto);
+            let size = if face == pdfcraft_fonts::Std14::TimesBoldItalic {
+                MUSIC_DYNAMIC_SIZE
+            } else if tempo {
+                MUSIC_TEMPO_SIZE
+            } else {
+                MUSIC_WORD_SIZE
+            };
             return (face.text_width(self.label(), size) + size * 0.4, size * 1.25);
         }
         match self {
