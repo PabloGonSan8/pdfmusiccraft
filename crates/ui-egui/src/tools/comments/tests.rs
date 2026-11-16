@@ -762,3 +762,13 @@ fn the_hover_outline_goes_round_what_a_press_would_take() {
     let selected = CommentView { selected: Some((0, 0)), ..CommentView::default() };
     assert!(hover_outline(&cx, &selected, Some(&comment)).is_none(), "the selected comment has its own frame");
 }
+
+#[test]
+fn resize_handles_can_be_left_out() {
+    // The touch music view's Move tool: without handles, a drag on a small mark moves it.
+    assert!(super::geometry::resize_handles(), "there unless left out");
+    set_resize_handles(false);
+    assert!(!super::geometry::resize_handles());
+    set_resize_handles(true);
+    assert!(super::geometry::resize_handles());
+}

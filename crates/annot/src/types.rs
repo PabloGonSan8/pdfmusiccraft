@@ -292,6 +292,9 @@ pub enum StampKind {
     NoteQuarter,
     NoteEighth,
     NoteSixteenth,
+    /// A note's head alone (no stem), to add to a chord or to correct a pitch: filled, and open.
+    NoteHeadFilled,
+    NoteHeadOpen,
 }
 
 /// A note's value, for the notes and metronome marks ([`StampKind::note`]).
@@ -326,7 +329,7 @@ pub enum StampGroup {
 
 impl StampKind {
     /// The music marks, in palette order.
-    pub const MUSIC: [StampKind; 79] = {
+    pub const MUSIC: [StampKind; 81] = {
         use StampKind::*;
         [
             Ppp, Pp, Piano, Mp, Mf, Forte, Ff, Fff, Sfz, Fp, Crescendo, Diminuendo, Cresc, Dim, Rit, Accel, ATempo, Accent, Staccato, Tenuto,
@@ -334,12 +337,12 @@ impl StampKind {
             Finger4, Finger5, RehearsalA, RehearsalB, RehearsalC, RehearsalD, RehearsalE, RehearsalF, RehearsalG, RehearsalH, Number, Segno, Coda,
             DalSegno, ToCoda, DaCapo, Fine, JumpFrom, JumpTo, Grave, Largo, Lento, Adagio, Andante, Moderato, Allegretto, Allegro, Vivace, Presto,
             Rall, MenoMosso, PiuMosso, MetroWhole, MetroHalf, MetroDottedHalf, MetroQuarter, MetroDottedQuarter, MetroEighth, MetroDottedEighth,
-            MetroSixteenth, NoteWhole, NoteHalf, NoteQuarter, NoteEighth, NoteSixteenth,
+            MetroSixteenth, NoteWhole, NoteHalf, NoteQuarter, NoteEighth, NoteSixteenth, NoteHeadFilled, NoteHeadOpen,
         ]
     };
 
     /// Every stamp: the business palette, then the music marks ([`Self::MUSIC`]).
-    pub const ALL: [StampKind; 101] = [
+    pub const ALL: [StampKind; 103] = [
         StampKind::DynApproved,
         StampKind::DynConfidential,
         StampKind::DynReceived,
@@ -441,6 +444,8 @@ impl StampKind {
         StampKind::NoteQuarter,
         StampKind::NoteEighth,
         StampKind::NoteSixteenth,
+        StampKind::NoteHeadFilled,
+        StampKind::NoteHeadOpen,
     ];
 
     pub fn group(self) -> StampGroup {
@@ -637,6 +642,8 @@ impl StampKind {
             NoteQuarter => "Quarter note",
             NoteEighth => "Eighth note",
             NoteSixteenth => "Sixteenth note",
+            NoteHeadFilled => "Filled notehead",
+            NoteHeadOpen => "Open notehead",
         }
     }
 
@@ -745,6 +752,8 @@ impl StampKind {
             NoteQuarter => "PCMusicNoteQuarter",
             NoteEighth => "PCMusicNoteEighth",
             NoteSixteenth => "PCMusicNoteSixteenth",
+            NoteHeadFilled => "PCMusicNoteHeadFilled",
+            NoteHeadOpen => "PCMusicNoteHeadOpen",
         }
     }
 
@@ -818,6 +827,7 @@ impl StampKind {
             SlurAbove | SlurBelow => return (80.0, 14.0),
             Segno => return (20.0, 26.0),
             Coda => return (24.0, 24.0),
+            NoteHeadFilled | NoteHeadOpen => return (NOTE_HEAD * NOTE_HEAD_WIDTH, NOTE_HEAD),
             _ => {}
         }
         let w = appearance::text_width(self.label(), 16.0) * 1.12 + 24.0;

@@ -3193,3 +3193,30 @@ fn only_pixel_snapping_passes_for_fitting_the_view() {
         assert!(!fits_height(Rect::from_min_size(pos2(0.0, 0.0), vec2(1.0, 600.5)), 600.0, ppp));
     }
 }
+
+#[test]
+fn the_whole_of_one_page_fits_the_window_whatever_the_other_pages_measure() {
+    let page =
+        |width: f32, height: f32| pdfcraft_render::PageInfo { width, height, label: String::new(), crop: [0.0, 0.0, width, height], rotation: 0 };
+    // A scan whose second page is wider: Fit Page fits that one, and leaves the first short.
+    let info = DocInfo { pages: vec![page(500.0, 700.0), page(600.0, 700.0)], ..Default::default() };
+    let mut v = DocView::new(DocId(1), &info, ViewDefaults::default());
+    v.viewport_screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 1280.0));
+    assert!(!v.fit_whole_page(0), "not before the page is laid out");
+    // The first page as laid out at zoom 1: 500 by 700 points on screen.
+    v.zoom = 1.0;
+    v.screen_rects = vec![(0, Rect::from_min_size(pos2(150.0, 28.0), vec2(500.0, 700.0)))];
+    assert!(v.fit_whole_page(0));
+    // Held by the window's width (800 / 500), not its height (1224 / 700): edge to edge.
+    assert_eq!((v.zoom, v.fit), (1.6, Fit::None));
+    assert_eq!(v.zoom_anchor, Some((0, 0.5, 0.0, vec2(400.0, MARGIN))), "centred, its top at the top");
+    // A window lower than the page is tall holds it by its height.
+    v.viewport_screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(1280.0, 800.0));
+    v.zoom = 1.0;
+    assert!(v.fit_whole_page(0));
+    assert!((v.zoom - (800.0 - 2.0 * MARGIN) / 700.0).abs() < 1e-4, "{}", v.zoom);
+    // A page with no size on screen fits nothing, and doesn't divide by it.
+    v.screen_rects = vec![(0, Rect::from_min_size(pos2(0.0, 0.0), vec2(0.0, 0.0)))];
+    v.fit_whole_page(0);
+    assert!(v.zoom.is_finite() && v.zoom <= 64.0);
+}

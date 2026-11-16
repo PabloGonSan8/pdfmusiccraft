@@ -119,6 +119,25 @@ pub fn set_finger_handles(on: bool) {
     FINGER_HANDLES.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+thread_local! {
+    /// Whether a selected comment has no resize handles: the touch music view's Move tool, where
+    /// a mark smaller than a fingertip was all handles, so every drag meant to move it resized
+    /// it. Per thread (the interface runs on one), so a test that turns them off leaves the rest
+    /// theirs.
+    static NO_RESIZE_HANDLES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Give selected comments their resize handles (`true`, as everywhere but the touch music view's
+/// Move tool) or leave them out, so a drag on one only moves it.
+pub fn set_resize_handles(on: bool) {
+    NO_RESIZE_HANDLES.with(|off| off.set(!on));
+}
+
+/// Whether a selected comment that can be resized shows its handles and takes presses on them.
+pub(super) fn resize_handles() -> bool {
+    !NO_RESIZE_HANDLES.with(std::cell::Cell::get)
+}
+
 /// How near a handle (screen points) a press takes it, and how large it is drawn.
 pub(super) fn handle_reach() -> (f32, f32) {
     if FINGER_HANDLES.load(std::sync::atomic::Ordering::Relaxed) { (24.0, 9.0) } else { (7.0, 4.5) }

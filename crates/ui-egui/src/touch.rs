@@ -28,10 +28,22 @@ pub(crate) fn on() -> bool {
     TOUCH.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Whether a document is shown in the music view (rather than the full editor), for the pages.
+static MUSIC_VIEW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether the pages are shown in the touch music view.
+pub(crate) fn music_view() -> bool {
+    MUSIC_VIEW.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Note whether the touch interface is on, for widgets that don't see the app.
 fn note_touch(app: &PdfCraftApp, ctx: &egui::Context) {
     TOUCH.store(app.touch.enabled, std::sync::atomic::Ordering::Relaxed);
+    let music = app.touch.enabled && app.touch.focus;
+    MUSIC_VIEW.store(music, std::sync::atomic::Ordering::Relaxed);
     crate::comments::set_finger_handles(app.touch.enabled);
+    // The music view's Move tool has no resize handles; its Size tool and the editor have them.
+    crate::comments::set_resize_handles(!music || app.touch.resize);
     if app.touch.enabled && ctx.options(|o| o.input_options.max_click_dist) < FINGER_CLICK_DIST {
         // A fingertip wobbles: a tap that moved a little is still a tap (it deselects, places a
         // mark), not the start of a drag.
@@ -137,6 +149,13 @@ pub struct Touch {
     /// The zoom that fits the music to the screen's width: at it or below, a sideways swipe turns
     /// the page (zoomed in further, it pans).
     fit_zoom: Option<f32>,
+    /// The page whose music that zoom fits, and how wide the screen was then: Fit on another page
+    /// fits that one's music, and a screen turned since is fitted again.
+    fit_page: Option<usize>,
+    fit_width: f32,
+    /// Moving and resizing marks: the Size tool (resize handles on the chosen mark) rather than
+    /// the Move tool (none, so a drag on a small mark moves it).
+    resize: bool,
     /// The folder the file browser showed last.
     pub last_dir: Option<PathBuf>,
     /// The tool put aside while two fingers move the page ([`two_fingers_pan`]).
@@ -164,13 +183,70 @@ fn big(ui: &mut egui::Ui, text: &str) -> egui::Response {
     ui.add(egui::Button::new(RichText::new(text).size(20.0)).min_size(vec2(64.0, 52.0)))
 }
 
+/// How wide the tile named `text` is.
+fn tile_width(ui: &egui::Ui, text: &str) -> f32 {
+    ui.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), egui::FontId::proportional(13.0), Color32::WHITE).size().x).max(40.0) + 20.0
+}
+
+/// One of a bar's tiles: its icon, its name, whether it's on, and what a tap does.
+type BarTile<'a> = (&'a str, &'a str, bool, fn(&mut PdfCraftApp));
+
+/// Whether a bar's tiles fit one row `width` wide, each `widths` wide with `gap` between them.
+fn one_row(widths: impl Iterator<Item = f32>, gap: f32, width: f32) -> bool {
+    widths.map(|w| w + gap).sum::<f32>() <= width
+}
+
+/// A bar's tiles: `left` from the left edge and `right` against the right one (with `title` in the
+/// room between) on one row when they fit. On a narrow screen (a tablet held upright, a phone)
+/// they go in reading order on as many rows as they take: on one row the two groups were drawn
+/// over each other there (Undo over the concert's Previous and Next).
+fn tile_rows(app: &mut PdfCraftApp, ui: &mut egui::Ui, left: &[BarTile<'_>], right: &[BarTile<'_>], title: Option<String>) {
+    const GAP: f32 = 4.0;
+    let fits = one_row(left.iter().chain(right).map(|t| tile_width(ui, t.1)), GAP, ui.available_width());
+    let mut tapped = None;
+    let mut show = |ui: &mut egui::Ui, t: &BarTile<'_>| {
+        if tile(ui, t.0, t.1, t.2).clicked() {
+            tapped = Some(t.3);
+        }
+    };
+    if fits {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = GAP;
+            for t in left {
+                show(ui, t);
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = GAP;
+                for t in right.iter().rev() {
+                    show(ui, t);
+                }
+                if let Some(title) = title {
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.add_space(8.0);
+                        ui.add(egui::Label::new(RichText::new(title).size(17.0).strong()).truncate());
+                    });
+                }
+            });
+        });
+    } else {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(GAP, GAP);
+            for t in left.iter().chain(right) {
+                show(ui, t);
+            }
+        });
+    }
+    if let Some(act) = tapped {
+        act(app);
+    }
+}
+
 /// A tool tile: its icon over its name, washed in the accent colour while it's on. An icon that
 /// isn't a Lucide name (such as "♪") is drawn as text.
 fn tile(ui: &mut egui::Ui, icon: &str, text: &str, on: bool) -> egui::Response {
     let t = crate::theme::Tokens::get(ui.ctx());
     let font = egui::FontId::proportional(13.0);
-    let w = ui.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), font.clone(), t.text).size().x).max(40.0) + 20.0;
-    let (rect, resp) = ui.allocate_exact_size(vec2(w, 62.0), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(tile_width(ui, text), 62.0), egui::Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), text));
     let fill = if on {
         t.accent_soft
@@ -195,7 +271,7 @@ fn tile(ui: &mut egui::Ui, icon: &str, text: &str, on: bool) -> egui::Response {
 /// row when it doesn't fit (egui places a frame before knowing its size, so it can't wrap one,
 /// and an overflowing row widened the whole start screen past the screen). Whether it was tapped.
 fn card_tile(ui: &mut egui::Ui, icon: &str, text: &str) -> bool {
-    let w = ui.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), egui::FontId::proportional(13.0), Color32::WHITE).size().x).max(40.0) + 20.0;
+    let w = tile_width(ui, text);
     // The tile, the card's margins and stroke, and the gap after it.
     let need = w + 2.0 * 10.0 + 2.0 + ui.spacing().item_spacing.x;
     if ui.available_size_before_wrap().x < need && ui.cursor().min.x > ui.max_rect().min.x + 1.0 {
@@ -289,8 +365,19 @@ fn home(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                 close_all(app);
             }
             if card_tile(ui, "folder-open", es("Open from…", "Abrir desde…")) {
-                app.touch.home = false;
-                app.run_command("file.open");
+                // The file browser opens over this screen, which stays until a score is chosen:
+                // leaving it first showed the score already open behind the browser, and
+                // cancelling left the player there instead of here.
+                let pdfs = rfd::AsyncFileDialog::new().add_filter("PDF", &["pdf", "PDF"]);
+                app.ask(crate::pickers::Ask::File(pdfs), None, |app, paths| {
+                    if let Some(path) = paths.first() {
+                        app.touch.home = false;
+                        app.touch.focus = true;
+                        app.touch.concert.clear();
+                        #[cfg(not(target_arch = "wasm32"))]
+                        app.open_path(&path.to_string_lossy());
+                    }
+                });
             }
             if card_tile(ui, "folder", es("Open folder…", "Abrir carpeta…")) {
                 app.ask(crate::pickers::Ask::Folder(rfd::AsyncFileDialog::new()), None, |app, paths| {
@@ -359,12 +446,8 @@ fn home(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     )
                     .to_owned()
                         + es(
-                            "
-
-If your scores are there but don't show, the app needs \"All files access\": Settings ▸ Apps ▸ PdfMusicCraft ▸ Permissions ▸ Files.",
-                            "
-
-Si tus partituras están ahí pero no salen, la app necesita \"Acceso a todos los archivos\": Ajustes ▸ Aplicaciones ▸ PdfMusicCraft ▸ Permisos ▸ Archivos.",
+                            "\n\nIf your scores are there but don't show, the app needs \"All files access\": Settings ▸ Apps ▸ PdfMusicCraft ▸ Permissions ▸ Files.",
+                            "\n\nSi tus partituras están ahí pero no salen, la app necesita \"Acceso a todos los archivos\": Ajustes ▸ Aplicaciones ▸ PdfMusicCraft ▸ Permisos ▸ Archivos.",
                         )
                 } else {
                     es("No score has that name.", "Ninguna partitura se llama así.").to_owned()
@@ -622,6 +705,18 @@ fn focus_frame(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
             view.set_fit(crate::canvas::Fit::Width);
         }
     }
+    // The screen turned (or lost its system bars) since the music was fitted: it is fitted again,
+    // unless the player has zoomed since. A picture picked in the editor isn't shown here.
+    if let Some(view) = app.active.and_then(|i| app.views.get_mut(i)) {
+        view.picked_image = None;
+        if app.touch.fitted == Some(view.id)
+            && view.fit == crate::canvas::Fit::None
+            && (view.viewport_width() - app.touch.fit_width).abs() > 1.0
+            && app.touch.fit_zoom.is_some_and(|z| (view.zoom - z).abs() <= z * 0.02)
+        {
+            app.touch.fitted = None;
+        }
+    }
     two_fingers_pan(app, &ctx);
     // A score taken off the start screen and opened again comes back to it.
     if !app.touch.hidden.is_empty()
@@ -701,7 +796,26 @@ fn fit_music(app: &mut PdfCraftApp, i: usize) {
         log::warn!("could not fit the music to the screen: {e}");
     }
     app.touch.fit_zoom = app.views.get(i).map(|v| v.zoom);
+    app.touch.fit_page = app.views.get(i).map(|v| v.current);
+    app.touch.fit_width = app.views.get(i).map_or(0.0, |v| v.viewport_width());
     FIT_ZOOM.store(app.touch.fit_zoom.unwrap_or(0.0).to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The bar's Fit: the music of the page shown, across the screen's width (as a score opens); a
+/// second tap shows that page whole, and the next its music again.
+fn fit(app: &mut PdfCraftApp) {
+    let Some(i) = app.active else { return };
+    let Some(view) = app.views.get_mut(i) else { return };
+    let page = view.current;
+    let fitted = app.touch.fit_page == Some(page)
+        && view.fit == crate::canvas::Fit::None
+        && (view.viewport_width() - app.touch.fit_width).abs() <= 1.0
+        && app.touch.fit_zoom.is_some_and(|z| (view.zoom - z).abs() <= z * 0.02);
+    if !fitted {
+        fit_music(app, i);
+    } else if !view.fit_whole_page(page) {
+        view.set_fit(crate::canvas::Fit::Page);
+    }
 }
 
 /// The music view's fitted zoom ([`Touch::fit_zoom`]), as f32 bits, for the pages' drag.
@@ -795,85 +909,73 @@ fn close_music(app: &mut PdfCraftApp) {
 
 /// The music view's bar, floating along the top.
 fn bar(app: &mut PdfCraftApp, ctx: &egui::Context) {
+    // In a concert: which score this is, between the tiles that go to the one before and after.
+    let place = concert_place(app).map(|(at, n)| format!("{}/{n}", at + 1));
+    let mut left: Vec<BarTile<'_>> = Vec::new();
+    left.push(("house", es("Scores", "Partituras"), false, |app| {
+        app.touch.home = true;
+        app.touch.bar = false;
+        close_music(app);
+    }));
+    if let Some(place) = &place {
+        left.push(("chevron-left", es("Previous", "Anterior"), false, |app| {
+            if let Some((at, _)) = concert_place(app).filter(|(at, _)| *at > 0) {
+                go_to_piece(app, at - 1);
+            }
+        }));
+        left.push((place.as_str(), es("Score", "Partitura"), false, |_| {}));
+        left.push(("chevron-right", es("Next", "Siguiente"), false, |app| {
+            if let Some((at, _)) = concert_place(app).filter(|(at, n)| at + 1 < *n) {
+                go_to_piece(app, at + 1);
+            }
+        }));
+    }
+    let mut right: Vec<BarTile<'_>> = Vec::new();
+    right.push(("undo-2", es("Undo", "Deshacer"), false, |app| app.run_command("edit.undo")));
+    right.push(("redo-2", es("Redo", "Rehacer"), false, |app| app.run_command("edit.redo")));
+    right.push(("save", es("Save", "Guardar"), false, |app| app.run_command("file.save")));
+    right.push(("♪", es("Marks", "Marcas"), app.touch.music, |app| {
+        if app.touch.music {
+            close_music(app);
+        } else {
+            app.touch.music = true;
+            app.touch.folded = false;
+        }
+    }));
+    right.push(("maximize", es("Fit", "Ajustar"), false, fit));
+    right.push(("sliders-horizontal", es("Editor", "Editor"), false, |app| {
+        app.touch.focus = false;
+        app.touch.bar = false;
+        // The editor starts out moving the page, as fingers expect.
+        close_music(app);
+    }));
+    if app.views.len() > 1 {
+        right.push(("circle-x", es("Close all", "Cerrar todas"), false, close_all));
+    }
+    right.push(("chevron-up", es("Hide", "Ocultar"), false, |app| app.touch.bar = false));
+    let title = app.active.and_then(|i| crate::canvas::tab_label(app, i));
     egui::Area::new(egui::Id::unique("touch_bar")).anchor(Align2::LEFT_TOP, vec2(12.0, 12.0)).order(egui::Order::Foreground).show(ctx, |ui| {
         card(ui).show(ui, |ui| {
             ui.set_width(ctx.content_rect().width() - 44.0);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                if tile(ui, "house", es("Scores", "Partituras"), false).clicked() {
-                    app.touch.home = true;
-                    app.touch.bar = false;
-                    close_music(app);
-                }
-                if let Some((at, n)) = concert_place(app) {
-                    if tile(ui, "chevron-left", es("Previous", "Anterior"), false).clicked() && at > 0 {
-                        go_to_piece(app, at - 1);
-                    }
-                    ui.label(RichText::new(format!("{}/{n}", at + 1)).size(16.0).strong());
-                    if tile(ui, "chevron-right", es("Next", "Siguiente"), false).clicked() && at + 1 < n {
-                        go_to_piece(app, at + 1);
-                    }
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    if tile(ui, "chevron-up", es("Hide", "Ocultar"), false).clicked() {
-                        app.touch.bar = false;
-                    }
-                    if app.views.len() > 1 && tile(ui, "circle-x", es("Close all", "Cerrar todas"), false).clicked() {
-                        close_all(app);
-                    }
-                    if tile(ui, "sliders-horizontal", es("Editor", "Editor"), false).clicked() {
-                        app.touch.focus = false;
-                        app.touch.bar = false;
-                        // The editor starts out moving the page, as fingers expect.
-                        close_music(app);
-                    }
-                    if tile(ui, "maximize", es("Fit", "Ajustar"), false).clicked()
-                        && let Some(view) = app.active.and_then(|i| app.views.get_mut(i))
-                    {
-                        // The whole sheet, as large as the screen takes it.
-                        view.set_fit(crate::canvas::Fit::Page);
-                    }
-                    if tile(ui, "♪", es("Marks", "Marcas"), app.touch.music).clicked() {
-                        if app.touch.music {
-                            close_music(app);
-                        } else {
-                            app.touch.music = true;
-                            app.touch.folded = false;
-                        }
-                    }
-                    if tile(ui, "save", es("Save", "Guardar"), false).clicked() {
-                        app.run_command("file.save");
-                    }
-                    if tile(ui, "redo-2", es("Redo", "Rehacer"), false).clicked() {
-                        app.run_command("edit.redo");
-                    }
-                    if tile(ui, "undo-2", es("Undo", "Deshacer"), false).clicked() {
-                        app.run_command("edit.undo");
-                    }
-                    if let Some(name) = app.active.and_then(|i| crate::canvas::tab_label(app, i)) {
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            ui.add_space(8.0);
-                            ui.add(egui::Label::new(RichText::new(name).size(17.0).strong()).truncate());
-                        });
-                    }
-                });
-            });
+            tile_rows(app, ui, &left, &right, title);
         });
     });
 }
 
-/// With the Select tool: make the selected mark larger or smaller (about its middle), or delete
-/// it. A tap on a mark selects it; dragging it moves it, and its corner handles resize it.
+/// With the Select tool: delete the selected mark and, with the Size tool, make it larger or
+/// smaller (about its middle). A tap on a mark selects it; with the Move tool a drag moves it,
+/// with the Size tool its handles resize it.
 fn selection_tiles(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
     let Some(i) = app.active else { return };
     let Some(view) = app.views.get(i) else { return };
+    let resize = app.touch.resize;
     let Some((page, index)) = view.comments.selected else {
-        ui.label(
-            RichText::new(es("Tap a mark on the score to move it or change its size", "Toca una marca de la partitura para moverla o cambiar su tamaño"))
-                .size(16.0)
-                .strong(),
-        );
+        let text = if resize {
+            es("Tap a mark on the score to change its size", "Toca una marca de la partitura para cambiar su tamaño")
+        } else {
+            es("Drag a mark on the score to move it", "Arrastra una marca de la partitura para moverla")
+        };
+        ui.label(RichText::new(text).size(16.0).strong());
         return;
     };
     let Some(rect) = app.session.get(view.id).and_then(|d| d.info.annotations.iter().find(|a| a.page == page && a.index == index).map(|a| a.rect))
@@ -886,10 +988,10 @@ fn selection_tiles(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
         pdfcraft_engine::Edit::ResizeAnnotation { page, index, rect: [cx - hw, cy - hh, cx + hw, cy + hh] }
     };
     let mut edit = None;
-    if tile(ui, "zoom-in", es("Larger", "Más grande"), false).clicked() {
+    if resize && tile(ui, "zoom-in", es("Larger", "Más grande"), false).clicked() {
         edit = Some(scale(1.25));
     }
-    if tile(ui, "zoom-out", es("Smaller", "Más pequeña"), false).clicked() && (rect[2] - rect[0]).min(rect[3] - rect[1]) > 4.0 {
+    if resize && tile(ui, "zoom-out", es("Smaller", "Más pequeña"), false).clicked() && (rect[2] - rect[0]).min(rect[3] - rect[1]) > 4.0 {
         edit = Some(scale(0.8));
     }
     if tile(ui, "trash-2", es("Delete", "Eliminar"), false).clicked() {
@@ -921,11 +1023,12 @@ fn selection_tiles(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
             });
         }
     }
-    ui.label(
-        RichText::new(es("Drag the mark to move it · pull a corner to resize", "Arrastra la marca para moverla · tira de una esquina para el tamaño"))
-            .size(15.0)
-            .weak(),
-    );
+    let hint = if resize {
+        es("Pull a handle to resize the mark", "Tira de un tirador para cambiar el tamaño de la marca")
+    } else {
+        es("Drag the mark to move it", "Arrastra la marca para moverla")
+    };
+    ui.label(RichText::new(hint).size(15.0).weak());
     if let Some(e) = edit
         && let Some(view) = app.views.get_mut(i)
     {
@@ -941,18 +1044,26 @@ fn selection_tiles(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
 /// The highlighter's colours, and how wide it marks.
 const HIGHLIGHTS: [[f64; 3]; 6] = [[1.0, 0.92, 0.0], [0.45, 0.9, 0.3], [1.0, 0.45, 0.75], [0.35, 0.7, 1.0], [1.0, 0.6, 0.1], [0.75, 0.5, 1.0]];
 const HIGHLIGHT_WIDTHS: [f64; 3] = [6.0, 12.0, 20.0];
+/// The pencil's colours (pencil grey, blue, red, green, and white to cover what is printed), and
+/// how wide it writes: the widest is for covering.
+const PENCILS: [[f64; 3]; 5] = [[0.15, 0.15, 0.15], [0.0, 0.4, 0.87], [0.85, 0.1, 0.1], [0.1, 0.55, 0.2], [1.0, 1.0, 1.0]];
+const PENCIL_WIDTHS: [f64; 4] = [1.0, 2.0, 4.0, 10.0];
 
-/// Swatches for the highlighter's colour, then its widths.
-fn highlighter_colours(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
-    use crate::comments::CommentTool;
+/// Swatches for the colour `tool` (the pencil or the highlighter) draws in, then its widths.
+fn pen_colours(app: &mut PdfCraftApp, ui: &mut egui::Ui, tool: crate::comments::CommentTool, colours: &[[f64; 3]], widths: &[f64]) {
     let t = crate::theme::Tokens::get(ui.ctx());
-    let mut style = app.comment_prefs.style(CommentTool::FreehandHighlight);
+    let mut style = app.comment_prefs.style(tool);
     let mut changed = false;
-    for c in HIGHLIGHTS {
+    for &c in colours {
         let on = style.color.iter().zip(c).all(|(a, b)| (a - b).abs() < 0.02);
         let (rect, resp) = ui.allocate_exact_size(vec2(48.0, 62.0), egui::Sense::click());
         let fill = Color32::from_rgb((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8);
-        ui.painter().circle(rect.center(), 17.0, fill, egui::Stroke::new(if on { 3.0 } else { 1.0 }, if on { t.text } else { t.border }));
+        ui.painter().circle(rect.center(), 17.0, fill, egui::Stroke::new(1.0, t.border));
+        // The chosen one wears a ring of the accent colour, which shows around every swatch (the
+        // text colour was lost around the pencil's dark grey).
+        if on {
+            ui.painter().circle_stroke(rect.center(), 21.0, egui::Stroke::new(3.0, t.accent_text));
+        }
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "colour"));
         if resp.clicked() {
             style.color = c;
@@ -960,14 +1071,14 @@ fn highlighter_colours(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
         }
     }
     ui.add_space(12.0);
-    for w in HIGHLIGHT_WIDTHS {
+    for &w in widths {
         let on = (style.width - w).abs() < 0.5;
         let (rect, resp) = ui.allocate_exact_size(vec2(44.0, 62.0), egui::Sense::click());
         if on {
             ui.painter().rect_filled(rect, 14.0, t.accent_soft);
         }
-        let h = (w as f32 * 0.9).min(20.0);
-        ui.painter().rect_filled(egui::Rect::from_center_size(rect.center(), vec2(28.0, h)), 3.0, if on { t.accent_text } else { t.icon });
+        let h = (w as f32 * 0.9).clamp(1.5, 20.0);
+        ui.painter().rect_filled(egui::Rect::from_center_size(rect.center(), vec2(28.0, h)), h.min(3.0), if on { t.accent_text } else { t.icon });
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "width"));
         if resp.clicked() {
             style.width = w;
@@ -975,7 +1086,7 @@ fn highlighter_colours(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
         }
     }
     if changed {
-        app.comment_prefs.set_style(CommentTool::FreehandHighlight, style);
+        app.comment_prefs.set_style(tool, style);
     }
 }
 
@@ -1014,49 +1125,43 @@ fn music_sheet(app: &mut PdfCraftApp, ctx: &egui::Context) {
         .show(ctx, |ui| {
             card(ui).show(ui, |ui| {
                 ui.set_width(ctx.content_rect().width() - 44.0);
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    let tool = app.quick_tool;
-                    if tile(ui, "hand", es("Pan", "Desplazar"), tool == QuickTool::Hand).clicked() {
+                let tool = app.quick_tool;
+                let pen = QuickTool::Comment(CommentTool::Ink);
+                let marker = QuickTool::Comment(CommentTool::FreehandHighlight);
+                let eraser = QuickTool::Comment(CommentTool::Eraser);
+                let left: [BarTile<'_>; 7] = [
+                    ("hand", es("Pan", "Desplazar"), tool == QuickTool::Hand, |app| {
                         app.quick_tool = QuickTool::Hand;
                         app.touch.tool = None;
-                    }
-                    let pen = QuickTool::Comment(CommentTool::Ink);
-                    if tile(ui, "pencil", es("Pencil", "Lápiz"), tool == pen).clicked() {
-                        app.quick_tool = pen;
-                    }
-                    let marker = QuickTool::Comment(CommentTool::FreehandHighlight);
-                    if tile(ui, "highlighter", es("Highlighter", "Subrayador"), tool == marker).clicked() {
-                        app.quick_tool = marker;
-                    }
-                    let eraser = QuickTool::Comment(CommentTool::Eraser);
-                    if tile(ui, "eraser", es("Erase", "Borrar"), tool == eraser).clicked() {
-                        app.quick_tool = eraser;
-                    }
-                    let select = QuickTool::Select;
-                    // Named for what it's for: a player looks for "move this mark", not "select".
-                    if tile(ui, "move", es("Move / resize", "Mover / tamaño"), tool == select).clicked() {
-                        app.quick_tool = select;
+                    }),
+                    ("pencil", es("Pencil", "Lápiz"), tool == pen, |app| app.quick_tool = QuickTool::Comment(CommentTool::Ink)),
+                    ("highlighter", es("Highlighter", "Subrayador"), tool == marker, |app| {
+                        app.quick_tool = QuickTool::Comment(CommentTool::FreehandHighlight);
+                    }),
+                    ("eraser", es("Erase", "Borrar"), tool == eraser, |app| app.quick_tool = QuickTool::Comment(CommentTool::Eraser)),
+                    // Named for what they're for: a player looks for "move this mark", not "select".
+                    // Two tools: with one, a mark smaller than a fingertip was all resize handles,
+                    // and a drag meant to move it resized it.
+                    ("move", es("Move", "Mover"), tool == QuickTool::Select && !app.touch.resize, |app| {
+                        app.quick_tool = QuickTool::Select;
                         app.touch.tool = None;
-                    }
-                    if tile(ui, "undo-2", es("Undo", "Deshacer"), false).clicked() {
-                        app.run_command("edit.undo");
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-                        if tile(ui, "x", es("Close", "Cerrar"), false).clicked() {
-                            close_music(app);
-                        }
-                        let (icon, text) =
-                            if app.touch.folded { ("chevron-up", es("Marks", "Marcas")) } else { ("chevron-down", es("Fold", "Plegar")) };
-                        if tile(ui, icon, text, false).clicked() {
-                            app.touch.folded = !app.touch.folded;
-                        }
-                        if tile(ui, "panels-top-left", es("Bar", "Barra"), app.touch.bar).clicked() {
-                            app.touch.bar = !app.touch.bar;
-                        }
-                    });
-                });
+                        app.touch.resize = false;
+                    }),
+                    ("maximize-2", es("Size", "Tamaño"), tool == QuickTool::Select && app.touch.resize, |app| {
+                        app.quick_tool = QuickTool::Select;
+                        app.touch.tool = None;
+                        app.touch.resize = true;
+                    }),
+                    ("undo-2", es("Undo", "Deshacer"), false, |app| app.run_command("edit.undo")),
+                ];
+                let (fold_icon, fold_text) =
+                    if app.touch.folded { ("chevron-up", es("Marks", "Marcas")) } else { ("chevron-down", es("Fold", "Plegar")) };
+                let right: [BarTile<'_>; 3] = [
+                    ("panels-top-left", es("Bar", "Barra"), app.touch.bar, |app| app.touch.bar = !app.touch.bar),
+                    (fold_icon, fold_text, false, |app| app.touch.folded = !app.touch.folded),
+                    ("x", es("Close", "Cerrar"), false, close_music),
+                ];
+                tile_rows(app, ui, &left, &right, None);
                 // What the chosen tool offers: the selected mark's size, the eraser's, the mark placed.
                 let tool = app.quick_tool;
                 ui.horizontal_wrapped(|ui| {
@@ -1064,7 +1169,10 @@ fn music_sheet(app: &mut PdfCraftApp, ctx: &egui::Context) {
                     match tool {
                         QuickTool::Select => selection_tiles(app, ui),
                         QuickTool::Comment(CommentTool::Eraser) => eraser_sizes(app, ui),
-                        QuickTool::Comment(CommentTool::FreehandHighlight) => highlighter_colours(app, ui),
+                        QuickTool::Comment(CommentTool::Ink) => pen_colours(app, ui, CommentTool::Ink, &PENCILS, &PENCIL_WIDTHS),
+                        QuickTool::Comment(CommentTool::FreehandHighlight) => {
+                            pen_colours(app, ui, CommentTool::FreehandHighlight, &HIGHLIGHTS, &HIGHLIGHT_WIDTHS);
+                        }
                         QuickTool::Stamp(k) => {
                             let text = format!("{} {}", es("Placing", "Poniendo"), k.label());
                             ui.label(RichText::new(text).size(16.0).strong());
@@ -1076,16 +1184,23 @@ fn music_sheet(app: &mut PdfCraftApp, ctx: &egui::Context) {
                     return;
                 }
                 let hint = match app.quick_tool {
-                    QuickTool::Comment(CommentTool::Ink) => es("Write with your finger on the score.", "Escribe con el dedo sobre la partitura."),
+                    QuickTool::Comment(CommentTool::Ink) => es(
+                        "Choose a colour and write with your finger on the score; white covers what is printed.",
+                        "Elige un color y escribe con el dedo sobre la partitura; el blanco tapa lo impreso.",
+                    ),
                     QuickTool::Comment(CommentTool::Eraser) => {
                         es("Rub over a mark or a drawing to remove it.", "Pasa el dedo por una marca o un trazo para borrarlo.")
                     }
                     QuickTool::Comment(CommentTool::FreehandHighlight) => {
                         es("Choose a colour and run your finger over what matters.", "Elige un color y pasa el dedo por lo importante.")
                     }
+                    QuickTool::Select if app.touch.resize => es(
+                        "Larger and Smaller change the chosen mark's size in steps; Move moves it.",
+                        "Más grande y Más pequeña cambian el tamaño de la marca elegida a saltos; Mover la mueve.",
+                    ),
                     QuickTool::Select => es(
-                        "Larger and Smaller change the chosen mark's size in steps; Pan goes back to moving the page.",
-                        "Más grande y Más pequeña cambian el tamaño de la marca elegida a saltos; Desplazar vuelve a mover la página.",
+                        "Here a drag only moves the mark; Size changes its size. Pan goes back to moving the page.",
+                        "Aquí arrastrar solo mueve la marca; Tamaño cambia su tamaño. Desplazar vuelve a mover la página.",
                     ),
                     QuickTool::Stamp(k) if k.stretches() => es(
                         "Drag across the score to draw it as long as you need.",
@@ -1354,4 +1469,26 @@ pub(crate) fn browser(app: &mut PdfCraftApp, ctx: &egui::Context) {
     browser::show(app, ctx);
     #[cfg(not(target_os = "android"))]
     let _ = (app, ctx);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_bar_wraps_when_its_tiles_dont_fit_one_row() {
+        // The music view's bar in a concert, in Spanish: about 800 points of tiles.
+        let tiles = [82.0, 70.0, 75.0, 76.0, 74.0, 68.0, 68.0, 62.0, 62.0, 60.0, 90.0, 65.0];
+        assert!(one_row(tiles.into_iter(), 4.0, 1280.0 - 44.0), "a tablet on its side");
+        assert!(!one_row(tiles.into_iter(), 4.0, 800.0 - 44.0), "the same tablet held upright");
+        assert!(one_row(std::iter::empty(), 4.0, 0.0));
+    }
+
+    #[test]
+    fn the_pencil_writes_in_white() {
+        assert!(PENCILS.contains(&[1.0, 1.0, 1.0]), "white covers what is printed");
+        // The default pencil (blue, 2 points) is one of the choices, so one starts out chosen.
+        let style = pdfcraft_engine::Style::default_for(&pdfcraft_engine::Shape::Ink { strokes: Vec::new() });
+        assert!(PENCILS.contains(&style.color) && PENCIL_WIDTHS.contains(&style.width));
+    }
 }

@@ -25,18 +25,12 @@ fn oval(cx: f64, cy: f64, a: f64, b: f64, angle: f64) -> String {
     out
 }
 
-/// A note of `value` (stem up), its head `hh` tall with its left edge at `x` and its middle at
-/// `y`; the stem reaches `top`. A whole note is `whole_w` wide (its box's width), others as wide
-/// as [`NOTE_HEAD_WIDTH`] makes them. A dot follows when `dotted`. Where the note ends on the right.
-#[allow(clippy::too_many_arguments)]
-/// `flags_left` draws the flags on the stem's left: a note turned upside down (stem down) then
-/// has them on the right, where engraving puts them.
-fn note(c: &mut String, value: NoteValue, dotted: bool, x: f64, y: f64, hh: f64, whole_w: Option<f64>, top: f64, flags_left: bool) -> f64 {
-    // Heads lean up to the right.
-    const TILT: f64 = 0.35;
-    let hw = whole_w.unwrap_or(if value == NoteValue::Whole { hh * 1.6 } else { hh * NOTE_HEAD_WIDTH });
-    let (a, b) = (hw / 2.0 * 0.95, hh / 2.0 * 0.9);
-    let hx = x + hw / 2.0;
+/// Heads lean up to the right (radians).
+const TILT: f64 = 0.35;
+
+/// A note's head about `(hx, y)` with half axes `a` and `b`: a wide ring for a whole note, a
+/// leaning ring for a half note, a leaning filled oval for the shorter ones.
+fn head(c: &mut String, value: NoteValue, hx: f64, y: f64, a: f64, b: f64) {
     match value {
         NoteValue::Whole => {
             // A wide ring, its hole leaning the other way.
@@ -54,6 +48,19 @@ fn note(c: &mut String, value: NoteValue, dotted: bool, x: f64, y: f64, hh: f64,
             c.push_str("f\n");
         }
     }
+}
+
+/// A note of `value` (stem up), its head `hh` tall with its left edge at `x` and its middle at
+/// `y`; the stem reaches `top`. A whole note is `whole_w` wide (its box's width), others as wide
+/// as [`NOTE_HEAD_WIDTH`] makes them. A dot follows when `dotted`. Where the note ends on the right.
+#[allow(clippy::too_many_arguments)]
+/// `flags_left` draws the flags on the stem's left: a note turned upside down (stem down) then
+/// has them on the right, where engraving puts them.
+fn note(c: &mut String, value: NoteValue, dotted: bool, x: f64, y: f64, hh: f64, whole_w: Option<f64>, top: f64, flags_left: bool) -> f64 {
+    let hw = whole_w.unwrap_or(if value == NoteValue::Whole { hh * 1.6 } else { hh * NOTE_HEAD_WIDTH });
+    let (a, b) = (hw / 2.0 * 0.95, hh / 2.0 * 0.9);
+    let hx = x + hw / 2.0;
+    head(c, value, hx, y, a, b);
     let mut right = x + hw;
     if value != NoteValue::Whole {
         let sw = (hh * 0.13).max(0.3);
@@ -344,6 +351,9 @@ pub(super) fn draw(kind: StampKind, rect: [f64; 4], col: Rgb, text: Option<&str>
             c.push_str(&line(&[(l, cy), (r, cy)]));
             c.push_str(&line(&[(cx, b), (cx, t)]));
         }
+        // A head alone fills its box, shaped as the notes' heads are.
+        NoteHeadFilled => head(&mut c, NoteValue::Quarter, cx, cy, w / 2.0 * 0.95, h / 2.0 * 0.9),
+        NoteHeadOpen => head(&mut c, NoteValue::Half, cx, cy, w / 2.0 * 0.95, h / 2.0 * 0.9),
         // Every other mark is a word, drawn above.
         _ => {}
     }

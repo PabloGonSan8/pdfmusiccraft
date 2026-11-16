@@ -5,6 +5,33 @@ PdfMusicCraft's versions, newest first. The format follows
 [Semantic Versioning](https://semver.org/). Downloads are on the
 [Releases](https://github.com/PabloGonSan8/pdfmusiccraft/releases) page.
 
+## [1.1.0] - 2026-11-16
+
+### Added
+- The pencil has colours and widths: pencil grey, blue, red, green and **white**, which covers
+  what is printed (a wrong note, a fingering to replace); the widest stroke is for covering.
+- Note heads alone, filled and open, among the notes of the marks panel: to add a note to a
+  chord or to write the right pitch over a covered one.
+
+### Changed
+- Move and Size are two tools. With one, a mark smaller than a fingertip was all resize handles,
+  and a drag meant to move it resized it. With Move a drag only moves the mark; Size shows the
+  handles, and Larger and Smaller.
+- Fit fits the music of the page you are on across the screen, as when a score opens; a second
+  tap shows that page whole. It used to fit the largest page of the PDF, which left the others
+  short of the screen's edges.
+
+### Fixed
+- With the tablet held upright (or on a phone) the top bar drew its tiles over each other: Undo
+  on top of a concert's Previous and Next. The bar, and the marks panel's row of tools, now take
+  as many rows as they need.
+- A score fitted to the screen stayed at that zoom when the tablet was turned; it is fitted again
+  to the new width (unless you have zoomed since).
+- A tap beside a mark with Move chosen washed the whole scanned page in blue.
+- With a score open, "Open from…" on the Scores screen showed that score behind the file browser,
+  and cancelling left you in it. The browser now opens over the Scores screen, which stays until
+  you choose a PDF.
+
 ## [1.0.1]
 
 ### Fixed
