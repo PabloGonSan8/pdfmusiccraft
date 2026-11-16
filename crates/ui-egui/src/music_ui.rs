@@ -139,6 +139,8 @@ fn name(kind: StampKind) -> &'static str {
         NoteQuarter => es("Quarter", "Negra"),
         NoteEighth => es("Eighth", "Corchea"),
         NoteSixteenth => es("Sixteenth", "Semicorchea"),
+        NoteHeadFilled => es("Filled head", "Cabeza negra"),
+        NoteHeadOpen => es("Open head", "Cabeza blanca"),
         other => other.label(),
     }
 }
@@ -156,8 +158,8 @@ fn sections() -> [(&'static str, &'static [StampKind]); 12] {
             &[MetroWhole, MetroHalf, MetroDottedHalf, MetroQuarter, MetroDottedQuarter, MetroEighth, MetroDottedEighth, MetroSixteenth],
         ),
         (
-            es("Notes: tap where the head goes", "Notas: toca donde va la cabeza"),
-            &[NoteWhole, NoteHalf, NoteQuarter, NoteEighth, NoteSixteenth],
+            es("Notes and heads alone: tap where the head goes", "Notas y cabezas sueltas: toca donde va la cabeza"),
+            &[NoteWhole, NoteHalf, NoteQuarter, NoteEighth, NoteSixteenth, NoteHeadFilled, NoteHeadOpen],
         ),
         (es("Articulation", "Articulación"), &[Accent, Staccato, Tenuto, Marcato, Fermata, BreathMark, Caesura]),
         (es("Bowing and pedal", "Arco y pedal"), &[UpBow, DownBow, PedalDown, PedalUp, Glasses]),
@@ -202,14 +204,21 @@ pub(crate) fn palette(app: &mut PdfCraftApp, ui: &mut egui::Ui, touch: bool) {
                 }
                 // Notes and metronome marks show the note itself, drawn (the interface fonts have
                 // no note glyphs); the name is for screen readers.
-                let resp = if let Some((value, dotted)) = kind.note() {
+                let head_alone = matches!(kind, StampKind::NoteHeadFilled | StampKind::NoteHeadOpen);
+                let resp = if kind.note().is_some() || head_alone {
                     let metro = kind.is_metronome();
                     let text = RichText::new(if metro { "        = " } else { " " }).size(size);
                     let b = ui.add(egui::Button::new(text).selected(active).min_size(min.max(vec2(size * 2.2, size * 2.2))));
                     let ink = if active { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
                     let h = b.rect.height() * 0.62;
-                    let x = if metro { b.rect.left() + size * 0.6 } else { b.rect.center().x - h * 0.2 };
-                    paint_note(ui.painter(), value, dotted, egui::pos2(x, b.rect.center().y + h * 0.5), h, ink);
+                    if let Some((value, dotted)) = kind.note() {
+                        let x = if metro { b.rect.left() + size * 0.6 } else { b.rect.center().x - h * 0.2 };
+                        paint_note(ui.painter(), value, dotted, egui::pos2(x, b.rect.center().y + h * 0.5), h, ink);
+                    } else {
+                        // The head alone, in the button's middle, larger than on a note so that
+                        // filled and open tell apart.
+                        paint_head(ui.painter(), kind == StampKind::NoteHeadOpen, b.rect.center(), vec2(h * 0.3, h * 0.22), ink);
+                    }
                     b.on_hover_text(name(kind))
                 } else {
                     ui.add(egui::Button::new(text).selected(active).min_size(min))
@@ -234,19 +243,25 @@ pub(crate) fn palette(app: &mut PdfCraftApp, ui: &mut egui::Ui, touch: bool) {
     }
 }
 
+/// A note's head about `head`, a ring when `open` and filled otherwise; the stroke a note of that
+/// size is drawn with.
+fn paint_head(p: &egui::Painter, open: bool, head: egui::Pos2, radius: egui::Vec2, ink: egui::Color32) -> egui::Stroke {
+    let line = egui::Stroke::new((radius.y * 0.32).max(1.2), ink);
+    if open {
+        p.add(egui::Shape::ellipse_stroke(head, radius - vec2(line.width / 2.0, line.width / 2.0), line));
+    } else {
+        p.add(egui::Shape::ellipse_filled(head, radius, ink));
+    }
+    line
+}
+
 /// A note of `value` (stem up) `h` tall: its head's left edge and bottom at `at`.
 fn paint_note(p: &egui::Painter, value: pdfcraft_engine::NoteValue, dotted: bool, at: egui::Pos2, h: f32, ink: egui::Color32) {
     use pdfcraft_engine::NoteValue::*;
     let hh = if value == Whole { h * 0.4 } else { h / 4.5 * 1.15 };
     let hw = hh * if value == Whole { 1.6 } else { 1.35 };
     let head = egui::pos2(at.x + hw / 2.0, at.y - hh / 2.0);
-    let radius = vec2(hw / 2.0, hh / 2.0);
-    let line = egui::Stroke::new((hh * 0.16).max(1.2), ink);
-    if matches!(value, Whole | Half) {
-        p.add(egui::Shape::ellipse_stroke(head, radius - vec2(line.width / 2.0, line.width / 2.0), line));
-    } else {
-        p.add(egui::Shape::ellipse_filled(head, radius, ink));
-    }
+    let line = paint_head(p, matches!(value, Whole | Half), head, vec2(hw / 2.0, hh / 2.0), ink);
     let mut right = at.x + hw;
     if value != Whole {
         let sx = at.x + hw - line.width / 2.0;

@@ -74,7 +74,7 @@ pub(crate) fn paint_page(ui: &egui::Ui, painter: &egui::Painter, cx: &PageCx<'_>
         }
         let r = cx.adjusted_rect(a, cv.gesture.as_ref(), pointer, shift, view.pending_edit.as_ref()).expand(2.0);
         painter.rect_stroke(r, CornerRadius::ZERO, Stroke::new(1.0, SELECT_BLUE), egui::StrokeKind::Middle);
-        if cx.allowed && resizable(a) {
+        if cx.allowed && resizable(a) && super::geometry::resize_handles() {
             for h in HANDLES {
                 let c = handle_pos(r, h);
                 painter.circle(c, super::geometry::handle_reach().1, Color32::WHITE, Stroke::new(1.0, SELECT_BLUE));

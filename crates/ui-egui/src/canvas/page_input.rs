@@ -931,7 +931,9 @@ pub(super) fn page_overlays(ui: &mut egui::Ui, view: &mut DocView, frame: &mut P
     // it is over first sees, whichever page it began on.
     let pick_sees =
         matches!(input.press, PagePress::Free | PagePress::Mine(Owner::Link { .. })) || input.press == PagePress::Elsewhere && ptr.drag_started;
-    if tool != QuickTool::Select {
+    // The touch music view moves marks with this tool, and picks no pictures: a tap beside a small
+    // mark washed the whole scanned page in blue.
+    if tool != QuickTool::Select || crate::touch::music_view() {
         view.pending_pick = None;
     } else if pick_sees && !input.consumed {
         crate::image_pick::page_input(resp, &xf, i, info, doc, ptr, input.press == PagePress::Free, view);

@@ -1194,6 +1194,20 @@ fn music_marks_draw_their_words_and_signs() {
     let (ax, ay) = StampKind::NoteQuarter.anchor();
     assert!(ax > 0.0 && ax <= 0.5 && ay > 0.0 && ay < 0.2, "{ax} {ay}");
     assert_eq!(StampKind::NoteWhole.anchor(), (0.5, 0.5));
+    // A head alone is a head and nothing else: no stem (a filled rectangle), filled or a ring.
+    for (kind, paint) in [(StampKind::NoteHeadFilled, "f\n"), (StampKind::NoteHeadOpen, "f*\n")] {
+        let (w, h) = kind.size();
+        assert!(w > h, "a head is wider than tall");
+        let shape = Shape::Stamp { rect: [120.0, 700.0, 120.0 + w, 700.0 + h], stamp: kind, by: None };
+        let j = add_annotation(
+            &mut doc,
+            &NewAnnotation { page: 0, style: Style::default_for(&shape), shape, contents: String::new(), author: "Ada".into() },
+            &Meta::default(),
+        )
+        .unwrap();
+        let ap = ap_content(&doc, &list(&doc, 0)[j]);
+        assert!(ap.contains(paint) && !ap.contains("re f") && kind.note().is_none(), "{kind:?}: {ap}");
+    }
     // A hairpin stretched to a long passage stays a thin wedge.
     let (w, h) = StampKind::Crescendo.size();
     assert!(w > h * 4.0);

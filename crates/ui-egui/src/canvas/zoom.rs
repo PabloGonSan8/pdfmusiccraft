@@ -207,6 +207,27 @@ impl DocView {
         true
     }
 
+    /// Zoom so the whole of `page` shows, as large as the window takes it, its top at the top.
+    /// Unlike [`Fit::Page`] while scrolling, which fits the document's largest page and so leaves
+    /// a smaller one short of the window's edges. `false` when the page isn't laid out yet.
+    pub(crate) fn fit_whole_page(&mut self, page: usize) -> bool {
+        let Some((_, pr)) = self.screen_rects.iter().find(|(p, _)| *p == page).copied() else { return false };
+        let (w, h) = (self.viewport_screen.width(), self.viewport_screen.height() - 2.0 * MARGIN);
+        let k = (w / pr.width().max(1.0)).min(h / pr.height().max(1.0));
+        if !k.is_finite() || k <= 0.0 {
+            return false;
+        }
+        self.zoom = (self.zoom * k).clamp(0.08, 64.0);
+        self.fit = Fit::None;
+        self.zoom_anchor = Some((page, 0.5, 0.0, vec2(w / 2.0, MARGIN)));
+        true
+    }
+
+    /// How wide (screen points) the pages' window was when they were last laid out.
+    pub(crate) fn viewport_width(&self) -> f32 {
+        self.viewport_screen.width()
+    }
+
     /// How large the page grid draws its pages (1.0 = the usual thumbnails).
     pub fn grid_zoom(&self) -> f32 {
         self.grid_zoom

@@ -123,6 +123,7 @@ pub(crate) fn hit(cx: &PageCx<'_>, view: &DocView, p: Pos2, on_link: bool) -> Op
             return Some(Hit::new(Owner::Comment { index: a.index, part: CommentPart::Point(point) }, Layer::Handle, point_cursor(Some(a), point)));
         }
         if resizable(a)
+            && super::geometry::resize_handles()
             && let Some((x, y)) = HANDLES.into_iter().find(|h| handle_pos(cx.frame_rect(a), *h).distance(p) <= super::geometry::handle_reach().0)
         {
             let icon = match (x, y) {
