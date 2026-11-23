@@ -10,9 +10,18 @@ It is not on Google Play: you install it from the `.apk` file published on the p
 
 ## What you need
 
-- Android 8.0 or later.
-- A 64-bit ARM device, which is almost every current phone and tablet.
-- About 200 MB of free space.
+- Android 8.0 (API 26) or later.
+- A 64-bit ARM device (`arm64-v8a`), which is almost every current phone and tablet. There is no
+  build for x86 or 32-bit ARM devices.
+- About 200 MB of free space (the download itself is about 32 MB).
+
+| The download | |
+|---|---|
+| File | `PdfMusicCraft-<version>.apk`, one per release, under **Assets** |
+| Version | the one in the file name; the newest is always at [releases/latest](https://github.com/PabloGonSan8/pdfmusiccraft/releases/latest) |
+| Signed | every release with the same key, so a new one installs over the old one |
+| Checksum | the SHA-256 shown next to the file on the release page ([how to check it](#check-the-download-sha-256)) |
+| Permissions | file access only, no internet: see [Privacy](#permissions-and-privacy) |
 
 ## Install from the phone or tablet
 
@@ -37,6 +46,30 @@ of all files**.
 
 Copy your PDFs into **Download** or **Documents** and they appear on the **Scores** screen. Each
 folder holding several PDFs shows as a **concert**.
+
+## Check the download (SHA-256)
+
+Optional, but it proves the file you got is the one that was published. On the release page,
+GitHub shows a `sha256:` value next to each file. Compute the same value for your download and
+compare:
+
+| System | Command |
+|---|---|
+| Windows (PowerShell) | `Get-FileHash .\PdfMusicCraft-1.1.1.apk -Algorithm SHA256` |
+| macOS | `shasum -a 256 PdfMusicCraft-1.1.1.apk` |
+| Linux | `sha256sum PdfMusicCraft-1.1.1.apk` |
+
+On the device itself, file manager apps such as Material Files show a file's SHA-256 in its
+properties. If the values differ, don't install it: download it again from the release page.
+
+Android adds its own check on updates: an APK signed with a different key won't install over the
+one you have.
+
+## Permissions and privacy
+
+The app asks for **file access** only, to list your PDFs and save your marks into them. It does
+not ask for internet access, so it sends nothing anywhere; there is no account, no ads and no
+analytics. The details: [PRIVACY.md](../../PRIVACY.md).
 
 ## Install from a computer
 
@@ -77,6 +110,23 @@ GitHub projects and tells you about (and installs) each new version.
 2. Tap **Add app** and paste this address:
    `https://github.com/PabloGonSan8/pdfmusiccraft`
 3. Tap **Add**. From then on Obtainium tells you about each new version.
+
+Obtainium installs the APK straight from GitHub Releases, so it is the same file as a manual
+download, signed with the same key: you can switch between the two at any time.
+
+### Other stores
+
+PdfMusicCraft is **not on Google Play**, by choice, and **not on F-Droid** today. What would be
+needed, for anyone who wants to help:
+
+- **F-Droid** builds every app from source on its own servers. The recipe would need Rust,
+  the Android NDK, `cargo-apk` and the [craft-i18n](https://github.com/storytold/craft-i18n)
+  checkout, and the build is large (it compiles the whole PdfCraft engine). All dependencies are
+  open source, which F-Droid requires; *All files access* is allowed there but has to be
+  justified in the listing.
+- **IzzyOnDroid** (an F-Droid-compatible repository) takes the APKs from GitHub Releases as they
+  are, so it needs no new build; it has its own inclusion rules, including APK size limits, to
+  check first.
 
 ## Reporting a bug or asking for something
 

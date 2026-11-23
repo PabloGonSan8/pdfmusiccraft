@@ -7,9 +7,11 @@ in a native Android activity; nothing here is sent upstream.
 
 - **Install it**: [INSTALL.md](INSTALL.md) · [INSTALL.es.md](INSTALL.es.md) (español)
 - **What changed**: [CHANGELOG.md](CHANGELOG.md)
+- **What comes next**: [ROADMAP.md](ROADMAP.md)
+- **Privacy and permissions**: [PRIVACY.md](../../PRIVACY.md)
 - **Publish a version**: [RELEASING.md](RELEASING.md)
 
-Everything lives on the `feat/music-marks` branch.
+Everything is on `main`; changes arrive through pull requests.
 
 ## What it adds
 
@@ -76,3 +78,39 @@ SDK's `d8`; the app loads it from memory through JNI. `make_icon.py` draws the l
 - Printing reaches no printer on Android (the dialog shows, the system print service isn't
   wired up).
 - No "Open with" from other apps, and no Storage Access Framework picker.
+- Only a 64-bit ARM (`arm64-v8a`) build: `build_targets` lists `aarch64-linux-android` alone.
+
+## Storage Access Framework
+
+A study, not a plan yet: could the app drop *All files access* (`MANAGE_EXTERNAL_STORAGE`) and
+use Android's Storage Access Framework (SAF) instead?
+
+**What SAF would give.** No broad permission: the user picks a folder once
+(`ACTION_OPEN_DOCUMENT_TREE`) and the app keeps access to that folder only
+(`takePersistableUriPermission`). Stores such as F-Droid and Google Play also look harder at apps
+that ask for all files access.
+
+**Why it isn't a drop-in change.** Everything here works on file paths:
+
+- The Scores screen walks Download, Documents and the app's folder with `std::fs`, and concerts
+  are real folders. Under SAF these become `content://` tree URIs, listed through
+  `DocumentsContract` queries over JNI, not directories.
+- The engine opens and saves PDFs by path, and saves write a new file and rename it over the old
+  one (atomic saves). A SAF document is reached through a file descriptor
+  (`ContentResolver.openFileDescriptor`), and "rename over" isn't available the same way.
+- The app has no Java activity of its own (it runs in `NativeActivity`); the only Java is
+  `Immersive.java`. Starting a picker and receiving its result needs an activity result callback,
+  so more Java glue.
+
+**A path that keeps today's features working.**
+
+1. Add "Open with" first (an `ACTION_VIEW` intent filter for `application/pdf`): it needs no
+   permission, and it is the same `content://` plumbing (read through a descriptor, save back
+   through one) on a smaller scale.
+2. Then offer "Add a folder" through `ACTION_OPEN_DOCUMENT_TREE`, listing that tree beside the
+   path-based folders, with saves through the descriptor.
+3. Only when SAF folders do everything the path-based ones do (concerts, hide, save in place)
+   make *All files access* optional, and keep it for those who prefer it.
+
+Until then the permission stays: removing it now would empty the Scores screen and break saving
+marks into existing scores.

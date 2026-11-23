@@ -35,10 +35,16 @@ keytool -genkeypair -v -keystore $HOME\pdfmusiccraft-release.jks -alias pdfmusic
    ```
 
 4. **Try it** on a device: `adb install -r PdfMusicCraft-1.0.0.apk`.
-5. **Commit and tag**: commit the version and changelog, then `git tag v1.0.0` and
-   `git push origin <branch> v1.0.0`.
+5. **Commit and tag**: commit the version and changelog through a pull request into `main`;
+   once it is merged, `git tag 1.0.0` on that commit and `git push origin 1.0.0`. Tags have no
+   `v` (`1.0.0`, `1.0.1`, `1.1.0`).
 6. **Publish** on GitHub: the repository's **Releases** ▸ **Draft a new release** ▸ choose the tag
-   `v1.0.0`, title `PdfMusicCraft 1.0.0`, paste that version's changelog section as the notes,
+   `1.0.0`, title `PdfMusicCraft 1.0.0`, paste that version's changelog section as the notes,
    attach `PdfMusicCraft-1.0.0.apk`, and **Publish release**.
+
+**One number everywhere.** The `version` in `Cargo.toml`, the changelog heading, the tag, the
+release title and the APK's file name must be the same number. The website and Obtainium read
+the version from the release, so a mismatch shows users the wrong version (the release first
+tagged `1.1.1` held `PdfMusicCraft-1.1.0.apk`; see the changelog's 1.1.1).
 
 Obtainium users get it on their own; others download it as INSTALL.md says.

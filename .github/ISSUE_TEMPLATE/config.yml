@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Install guide / Guía de instalación
+    url: https://github.com/PabloGonSan8/pdfmusiccraft/blob/main/apps/pdfcraft-android/INSTALL.md
+    about: How to install, update and give file access. / Cómo instalar, actualizar y dar acceso a los archivos.
+  - name: Security problem / Problema de seguridad
+    url: https://github.com/PabloGonSan8/pdfmusiccraft/blob/main/SECURITY.md
+    about: Please report it privately. / Avísalo en privado, por favor.

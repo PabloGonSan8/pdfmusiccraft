@@ -1,0 +1,26 @@
+name: Feature request / Propuesta de mejora
+description: A mark, tool or change that would help you on the stand. / Una marca, herramienta o cambio que te ayudaría en el atril.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the roadmap and the open issues first: apps/pdfcraft-android/ROADMAP.md
+        Mira antes la hoja de ruta y las incidencias abiertas.
+  - type: textarea
+    id: need
+    attributes:
+      label: What you need / Qué necesitas
+      description: What would you like to do, and what gets in the way today? / ¿Qué quieres hacer y qué te lo impide hoy?
+    validations:
+      required: true
+  - type: input
+    id: instrument
+    attributes:
+      label: Instrument or use / Instrumento o uso
+      placeholder: "Violin, orchestra / Violín, orquesta"
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work / Cómo podría funcionar
+      description: A sketch, a photo of a marked paper score, or a description. / Un boceto, una foto de una partitura en papel marcada o una descripción.

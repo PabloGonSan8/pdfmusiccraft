@@ -5,6 +5,20 @@ PdfMusicCraft's versions, newest first. The format follows
 [Semantic Versioning](https://semver.org/). Downloads are on the
 [Releases](https://github.com/PabloGonSan8/pdfmusiccraft/releases) page.
 
+## [1.1.1] - 2026-11-23
+
+The app works as in 1.1.0; this version brings its number in line and adds the project's
+documentation.
+
+### Changed
+- The app's version is 1.1.1, the same as its release. The release first tagged `1.1.1` held
+  the 1.1.0 APK, so the website and Obtainium showed one number and the app another.
+
+### Added
+- Documentation: a PdfMusicCraft roadmap, a privacy page (permissions and what is stored), contributing
+  and security guides, issue templates, and download details (architecture, size, SHA-256
+  check, Obtainium) in the install guides.
+
 ## [1.1.0] - 2026-11-16
 
 ### Added
@@ -32,14 +46,14 @@ PdfMusicCraft's versions, newest first. The format follows
   and cancelling left you in it. The browser now opens over the Scores screen, which stays until
   you choose a PDF.
 
-## [1.0.1]
+## [1.0.1] - 2026-11-11
 
 ### Fixed
 - A new install listed no scores and opened no folders until "All files access" was found and
   turned on by hand in Android's settings. The app now explains it on first start and opens that
   setting with one tap; the scores appear as soon as you come back.
 
-## [1.0.0] 
+## [1.0.0] - 2026-11-11
 
 The first public version.
 
