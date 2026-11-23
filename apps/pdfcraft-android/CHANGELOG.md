@@ -5,17 +5,21 @@ PdfMusicCraft's versions, newest first. The format follows
 [Semantic Versioning](https://semver.org/). Downloads are on the
 [Releases](https://github.com/PabloGonSan8/pdfmusiccraft/releases) page.
 
-## [Unreleased]
+## [1.1.1] - 2026-11-23
+
+The app works as in 1.1.0; this version brings its number in line and adds the project's
+documentation.
+
+### Changed
+- The app's version is 1.1.1, the same as its release. The release first tagged `1.1.1` held
+  the 1.1.0 APK, so the website and Obtainium showed one number and the app another.
 
 ### Added
-- Project documentation: a PdfMusicCraft roadmap, a privacy page, contributing and security
-  guides, issue templates, and download details (architecture, size, SHA-256 check) in the
-  install guides. No change to the app.
+- Documentation: a PdfMusicCraft roadmap, a privacy page (permissions and what is stored), contributing
+  and security guides, issue templates, and download details (architecture, size, SHA-256
+  check, Obtainium) in the install guides.
 
 ## [1.1.0] - 2026-11-16
-
-> Published on GitHub as the release tagged `1.1.1` ("PdfMusicCraft 1.1.1"). The APK in it,
-> `PdfMusicCraft-1.1.0.apk`, is version 1.1.0, and that is the version Android and the app show.
 
 ### Added
 - The pencil has colours and widths: pencil grey, blue, red, green and **white**, which covers

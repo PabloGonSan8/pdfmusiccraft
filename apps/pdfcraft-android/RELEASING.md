@@ -44,7 +44,7 @@ keytool -genkeypair -v -keystore $HOME\pdfmusiccraft-release.jks -alias pdfmusic
 
 **One number everywhere.** The `version` in `Cargo.toml`, the changelog heading, the tag, the
 release title and the APK's file name must be the same number. The website and Obtainium read
-the version from the release, so a mismatch shows users the wrong version (release `1.1.1`
-holds `PdfMusicCraft-1.1.0.apk`, which is why the changelog has a note on 1.1.0).
+the version from the release, so a mismatch shows users the wrong version (the release first
+tagged `1.1.1` held `PdfMusicCraft-1.1.0.apk`; see the changelog's 1.1.1).
 
 Obtainium users get it on their own; others download it as INSTALL.md says.
