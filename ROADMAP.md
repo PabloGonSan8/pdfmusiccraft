@@ -1,3 +1,5 @@
+> **PdfMusicCraft:** this file is the roadmap of [PdfCraft](https://github.com/storytold/pdfcraft), the engine PdfMusicCraft is built on, kept as it comes from upstream. PdfMusicCraft's own roadmap is [apps/pdfcraft-android/ROADMAP.md](apps/pdfcraft-android/ROADMAP.md).
+
 # PdfCraft roadmap
 
 > **Last reviewed:** 2026-10-31 | **Last updated:** 2026-10-31 | **Change:** patch (M6, PR #4166/#4088: integrate main f137a289 at 0.16.1; retain automatic-field Print suppression, explicit button/console printing and document-error provenance; 761 scoped tests and verification gates passed; 13-step CLI exercise and render inspection passed; existing warnings retained; estimates unchanged)

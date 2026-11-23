@@ -1,0 +1,48 @@
+name: Bug report / Informe de fallo
+description: Something in PdfMusicCraft doesn't work as it should. / Algo de PdfMusicCraft no funciona como debería.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please write in English or Spanish. Security problems: see SECURITY.md instead.
+        ¡Gracias por avisar! Escribe en inglés o en español. Problemas de seguridad: mira SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: App version / Versión de la app
+      description: The number in the name of the APK you installed. / El número del nombre del APK que instalaste.
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version / Dispositivo y versión de Android
+      placeholder: "Samsung Galaxy Tab S9, Android 14"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did / Qué hiciste
+      description: Step by step. / Paso a paso.
+      placeholder: |
+        1. Open a score from Download
+        2. Choose Marks ▸ mf
+        3. Tap the score
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected / Qué esperabas
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened / Qué pasó
+      description: Screenshots help a lot. A small PDF that shows the problem too (no personal documents). / Las capturas ayudan mucho; un PDF pequeño que lo muestre, también (sin documentos personales).
+    validations:
+      required: true

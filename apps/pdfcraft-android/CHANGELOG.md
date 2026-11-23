@@ -5,7 +5,17 @@ PdfMusicCraft's versions, newest first. The format follows
 [Semantic Versioning](https://semver.org/). Downloads are on the
 [Releases](https://github.com/PabloGonSan8/pdfmusiccraft/releases) page.
 
+## [Unreleased]
+
+### Added
+- Project documentation: a PdfMusicCraft roadmap, a privacy page, contributing and security
+  guides, issue templates, and download details (architecture, size, SHA-256 check) in the
+  install guides. No change to the app.
+
 ## [1.1.0] - 2026-11-16
+
+> Published on GitHub as the release tagged `1.1.1` ("PdfMusicCraft 1.1.1"). The APK in it,
+> `PdfMusicCraft-1.1.0.apk`, is version 1.1.0, and that is the version Android and the app show.
 
 ### Added
 - The pencil has colours and widths: pencil grey, blue, red, green and **white**, which covers
@@ -32,14 +42,14 @@ PdfMusicCraft's versions, newest first. The format follows
   and cancelling left you in it. The browser now opens over the Scores screen, which stays until
   you choose a PDF.
 
-## [1.0.1]
+## [1.0.1] - 2026-11-11
 
 ### Fixed
 - A new install listed no scores and opened no folders until "All files access" was found and
   turned on by hand in Android's settings. The app now explains it on first start and opens that
   setting with one tap; the scores appear as soon as you come back.
 
-## [1.0.0] 
+## [1.0.0] - 2026-11-11
 
 The first public version.
 
