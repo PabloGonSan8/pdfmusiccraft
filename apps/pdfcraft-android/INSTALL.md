@@ -55,9 +55,9 @@ compare:
 
 | System | Command |
 |---|---|
-| Windows (PowerShell) | `Get-FileHash .\PdfMusicCraft-1.1.1.apk -Algorithm SHA256` |
-| macOS | `shasum -a 256 PdfMusicCraft-1.1.1.apk` |
-| Linux | `sha256sum PdfMusicCraft-1.1.1.apk` |
+| Windows (PowerShell) | `Get-FileHash .\PdfMusicCraft-1.1.2.apk -Algorithm SHA256` |
+| macOS | `shasum -a 256 PdfMusicCraft-1.1.2.apk` |
+| Linux | `sha256sum PdfMusicCraft-1.1.2.apk` |
 
 On the device itself, file manager apps such as Material Files show a file's SHA-256 in its
 properties. If the values differ, don't install it: download it again from the release page.

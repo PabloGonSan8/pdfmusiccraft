@@ -13,7 +13,7 @@ Where PdfMusicCraft is and where it may go. It covers the Android app only; the 
 Nothing is in active development right now beyond what is on `main`. When work starts on an
 item, it gets an issue, linked here.
 
-## ✅ Shipped (1.1.1)
+## ✅ Shipped (1.1.2)
 
 **Scores**
 - Scores screen: PDFs in Download, Documents and the app's folder, and recent files, with search.
@@ -94,7 +94,7 @@ item, it gets an issue, linked here.
 Ahora mismo no hay nada en desarrollo aparte de lo que está en `main`. Cuando se empiece algo,
 tendrá su incidencia, enlazada aquí.
 
-### ✅ Hecho (1.1.1)
+### ✅ Hecho (1.1.2)
 
 - **Partituras**: pantalla Partituras con buscador y recientes; conciertos por carpetas; ocultar
   partituras de la lista; Cerrar todas.

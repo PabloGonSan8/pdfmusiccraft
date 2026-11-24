@@ -5,6 +5,22 @@ PdfMusicCraft's versions, newest first. The format follows
 [Semantic Versioning](https://semver.org/). Downloads are on the
 [Releases](https://github.com/PabloGonSan8/pdfmusiccraft/releases) page.
 
+## [1.1.2] - 2026-11-24
+
+**Uninstall the previous version first.** 1.1.2 is signed with a new key (the old one can no
+longer be used), so Android won't install it over 1.1.1 or earlier. Uninstalling loses what the
+app keeps inside it (concert lists, settings, recent files); your PDFs and the marks saved in
+them stay. Obtainium will report a signature error: uninstall, then install again from
+Obtainium. Later versions update normally.
+
+### Changed
+- The marks panel shows the signs themselves instead of their names: accent, staccato, tenuto,
+  marcato, fermata, breath mark, caesura, up and down bow, pedal release, glasses, hairpins,
+  slurs, segno and coda look on their buttons as they do on the score, in any language. With a mouse, hovering
+  over one still names it. Dynamics, tempo words, fingering and letters stay as
+  written, as they are in a score
+  ([#5](https://github.com/PabloGonSan8/pdfmusiccraft/issues/5)).
+
 ## [1.1.1] - 2026-11-23
 
 The app works as in 1.1.0; this version brings its number in line and adds the project's
