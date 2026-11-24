@@ -69,7 +69,8 @@ pub(crate) fn parse_note(contents: &str) -> Option<(StampKind, bool, bool)> {
 
 /// A written note's `by` line.
 pub(crate) fn note_flags(down: bool, dot: bool) -> Option<String> {
-    let words: Vec<&str> = [(down, pdfcraft_engine::NOTE_DOWN), (dot, pdfcraft_engine::NOTE_DOT)].into_iter().filter(|(on, _)| *on).map(|(_, w)| w).collect();
+    let words: Vec<&str> =
+        [(down, pdfcraft_engine::NOTE_DOWN), (dot, pdfcraft_engine::NOTE_DOT)].into_iter().filter(|(on, _)| *on).map(|(_, w)| w).collect();
     (!words.is_empty()).then(|| words.join(" "))
 }
 
@@ -104,15 +105,15 @@ pub(crate) fn es(en: &'static str, es: &'static str) -> &'static str {
 fn name(kind: StampKind) -> &'static str {
     use StampKind::*;
     match kind {
-        Crescendo => es("Crescendo <", "Crescendo <"),
-        Diminuendo => es("Diminuendo >", "Diminuendo >"),
+        Crescendo => es("Crescendo", "Crescendo"),
+        Diminuendo => es("Diminuendo", "Diminuendo"),
         Accent => es("Accent", "Acento"),
         Staccato => es("Staccato", "Staccato"),
         Tenuto => es("Tenuto", "Tenuto"),
         Marcato => es("Marcato", "Marcato"),
         Fermata => es("Fermata", "Calderón"),
         BreathMark => es("Breath mark", "Respiración"),
-        Caesura => es("Caesura //", "Cesura //"),
+        Caesura => es("Caesura", "Cesura"),
         UpBow => es("Up bow", "Arco arriba"),
         DownBow => es("Down bow", "Arco abajo"),
         PedalUp => es("Pedal release", "Soltar pedal"),
@@ -120,8 +121,8 @@ fn name(kind: StampKind) -> &'static str {
         SlurAbove => es("Slur above", "Ligadura arriba"),
         SlurBelow => es("Slur below", "Ligadura abajo"),
         Number => es("Number", "Número"),
-        Segno => es("Segno (S)", "Segno (S)"),
-        Coda => es("Coda (O)", "Coda (O)"),
+        Segno => es("Segno", "Segno"),
+        Coda => es("Coda", "Coda"),
         DalSegno => es("D.S. → segno", "D.S. → segno"),
         ToCoda => es("To Coda → coda", "To Coda → coda"),
         DaCapo => es("D.C. → start", "D.C. → inicio"),
@@ -220,6 +221,16 @@ pub(crate) fn palette(app: &mut PdfCraftApp, ui: &mut egui::Ui, touch: bool) {
                         paint_head(ui.painter(), kind == StampKind::NoteHeadOpen, b.rect.center(), vec2(h * 0.3, h * 0.22), ink);
                     }
                     b.on_hover_text(name(kind))
+                } else if is_sign(kind) {
+                    // Signs show themselves, drawn as on the page; the name is for screen readers.
+                    let wide = kind.stretches() || kind == StampKind::Glasses;
+                    let side = min.max(vec2(size * 2.2, size * 2.2));
+                    let b = ui.add(egui::Button::new(" ").selected(active).min_size(if wide { side * vec2(1.6, 1.0) } else { side }));
+                    let ink = if active { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
+                    let h = b.rect.height() * 0.5;
+                    let inner = egui::Rect::from_center_size(b.rect.center(), vec2(if wide { h * 2.0 } else { h }, h));
+                    ui.painter().extend(sign_shapes(kind, inner, ink).unwrap_or_default());
+                    b.on_hover_text(name(kind))
                 } else {
                     ui.add(egui::Button::new(text).selected(active).min_size(min))
                 };
@@ -241,6 +252,101 @@ pub(crate) fn palette(app: &mut PdfCraftApp, ui: &mut egui::Ui, touch: bool) {
         });
         ui.add_space(if touch { 6.0 } else { 2.0 });
     }
+}
+
+/// A mark drawn as a sign (an articulation, a hairpin, a segno…), not as a word or a note.
+fn is_sign(kind: StampKind) -> bool {
+    kind.music_face().is_none() && kind.note().is_none() && !matches!(kind, StampKind::NoteHeadFilled | StampKind::NoteHeadOpen)
+}
+
+/// The shapes sign `kind` shows on its button, filling `r`: the drawing its appearance makes on
+/// the page (`pdfcraft_annot`'s `appearance/music.rs`), with y down. `None` for marks that aren't
+/// signs ([`is_sign`]).
+fn sign_shapes(kind: StampKind, r: egui::Rect, ink: egui::Color32) -> Option<Vec<egui::Shape>> {
+    use StampKind::*;
+    use egui::epaint::CubicBezierShape;
+    use egui::{Shape, pos2};
+    let (l, rt, t, b) = (r.left(), r.right(), r.top(), r.bottom());
+    let (cx, cy, w, h) = (r.center().x, r.center().y, r.width(), r.height());
+    let s = egui::Stroke::new((w.min(h) * 0.1).clamp(1.2, 2.5), ink);
+    let line = |pts: &[(f32, f32)]| Shape::line(pts.iter().map(|&(x, y)| pos2(x, y)).collect(), s);
+    let curve = |a: (f32, f32), p: (f32, f32), q: (f32, f32), z: (f32, f32)| {
+        Shape::CubicBezier(CubicBezierShape::from_points_stroke([a, p, q, z].map(|(x, y)| pos2(x, y)), false, egui::Color32::TRANSPARENT, s))
+    };
+    let dot = |x: f32, y: f32, rad: f32| Shape::circle_filled(pos2(x, y), rad, ink);
+    let bar = |x0: f32, y0: f32, x1: f32, y1: f32| Shape::rect_filled(egui::Rect::from_min_max(pos2(x0, y0), pos2(x1, y1)), 0.0, ink);
+    Some(match kind {
+        Crescendo => vec![line(&[(rt, t), (l, cy), (rt, b)])],
+        Diminuendo | Accent => vec![line(&[(l, t), (rt, cy), (l, b)])],
+        Staccato => vec![dot(cx, cy, w.min(h) * 0.2)],
+        Tenuto => vec![bar(l, cy - h * 0.08, rt, cy + h * 0.08)],
+        Marcato => vec![line(&[(l, b), (cx, t), (rt, b)])],
+        UpBow => vec![line(&[(l, t), (cx, b), (rt, t)])],
+        DownBow => vec![line(&[(l, b), (l, t)]), line(&[(rt, b), (rt, t)]), bar(l - s.width / 2.0, t, rt + s.width / 2.0, t + h * 0.22)],
+        Fermata => {
+            // An upper half ellipse over a dot.
+            let (rx, ry, base) = ((rt - l) / 2.0, h * 0.85, b - h * 0.1);
+            let k = 0.552_284_8;
+            let rad = (h * 0.12).max(s.width);
+            vec![
+                curve((l, base), (l, base - ry * k), (cx - rx * k, base - ry), (cx, base - ry)),
+                curve((cx, base - ry), (cx + rx * k, base - ry), (rt, base - ry * k), (rt, base)),
+                dot(cx, base - rad * 1.2, rad),
+            ]
+        }
+        BreathMark => {
+            // A comma: a filled head with a tail curling down and left.
+            let rad = w.min(h) * 0.3;
+            let (hx, hy) = (cx + w * 0.1, t + rad);
+            vec![dot(hx, hy, rad), curve((hx + rad, hy), (hx + rad, b - h * 0.3), (l + w * 0.2, b), (l, b))]
+        }
+        Caesura => {
+            let d = w * 0.35;
+            vec![line(&[(l, b), (l + d, t)]), line(&[(rt - d, b), (rt, t)])]
+        }
+        PedalUp => {
+            // The release asterisk: a small ring with four strokes through it.
+            let mut out = vec![Shape::circle_stroke(r.center(), w.min(h) * 0.2, s)];
+            let (hw, hh, d) = (w / 2.0, h / 2.0, 0.707);
+            for (dx, dy) in [(hw, 0.0), (0.0, hh), (hw * d, hh * d), (hw * d, -hh * d)] {
+                out.push(line(&[(cx - dx, cy - dy), (cx - dx * 0.4, cy - dy * 0.4)]));
+                out.push(line(&[(cx + dx * 0.4, cy + dy * 0.4), (cx + dx, cy + dy)]));
+            }
+            out
+        }
+        Glasses => {
+            // Two lenses and a bridge.
+            let rad = (w * 0.22).min(h / 2.0);
+            let (lx, rx) = (l + rad, rt - rad);
+            vec![
+                Shape::circle_stroke(pos2(lx, cy), rad, s),
+                Shape::circle_stroke(pos2(rx, cy), rad, s),
+                curve((lx + rad, cy), (cx - rad * 0.3, cy - rad * 0.6), (cx + rad * 0.3, cy - rad * 0.6), (rx - rad, cy)),
+            ]
+        }
+        // A Bézier's control points sit a third further out than the peak they make.
+        SlurAbove => vec![curve((l, b), (l + w * 0.25, b - h / 0.75), (rt - w * 0.25, b - h / 0.75), (rt, b))],
+        SlurBelow => vec![curve((l, t), (l + w * 0.25, t + h / 0.75), (rt - w * 0.25, t + h / 0.75), (rt, t))],
+        Segno => {
+            // An S, a slash through it from bottom left to top right, and a dot on each side.
+            let (sl, sr) = (l + w * 0.2, rt - w * 0.2);
+            let (top, mid, bot) = (t + h * 0.08, cy, b - h * 0.08);
+            let rad = (w * 0.09).max(s.width * 0.6);
+            vec![
+                curve((sr, top + h * 0.12), (sr, top - h * 0.06), (sl, top - h * 0.06), (sl, (top + mid) / 2.0)),
+                curve((sl, (top + mid) / 2.0), (sl, mid), (sr, mid), (sr, (mid + bot) / 2.0)),
+                curve((sr, (mid + bot) / 2.0), (sr, bot + h * 0.06), (sl, bot + h * 0.06), (sl, bot - h * 0.12)),
+                line(&[(l, b - h * 0.15), (rt, t + h * 0.15)]),
+                dot(l + rad, mid + h * 0.12, rad),
+                dot(rt - rad, mid - h * 0.12, rad),
+            ]
+        }
+        Coda => {
+            // A ring with a cross through it, the arms reaching past the ring.
+            vec![Shape::ellipse_stroke(r.center(), vec2(w * 0.32, h * 0.36), s), line(&[(l, cy), (rt, cy)]), line(&[(cx, t), (cx, b)])]
+        }
+        _ => return None,
+    })
 }
 
 /// A note's head about `head`, a ring when `open` and filled otherwise; the stroke a note of that
@@ -529,6 +635,18 @@ startxref
         assert!((frac - 198.0 / 300.0).abs() < 0.01, "{frac}");
         // "→ B" has nowhere to land.
         assert_eq!(jump_target(info, 0, [40.0, 150.0]), None);
+    }
+
+    #[test]
+    fn every_sign_has_an_icon_and_no_word_or_note_does() {
+        let r = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), vec2(20.0, 20.0));
+        let signs: Vec<StampKind> = StampKind::MUSIC.into_iter().filter(|&k| is_sign(k)).collect();
+        // The fermata and staccato the issue names are among them.
+        assert!(signs.contains(&StampKind::Fermata) && signs.contains(&StampKind::Staccato));
+        for kind in StampKind::MUSIC {
+            let shapes = sign_shapes(kind, r, egui::Color32::BLACK);
+            assert_eq!(shapes.as_ref().is_some_and(|s| !s.is_empty()), is_sign(kind), "{kind:?}");
+        }
     }
 
     #[test]
